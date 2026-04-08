@@ -1,0 +1,26 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+
+db:
+  host: localhost
+  port: 5432
+  name: domain_platform
+  user: postgres
+  password: ""
+  ssl_mode: disable
+
+redis:
+  addr: localhost:6379
+  password: ""
+
+jwt:
+  secret: "change-me-in-production"
+  expiry: 24h
+
+telegram:
+  bot_token: ""
+  chat_id: ""
+
+webhook:
+  url: ""

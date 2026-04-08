@@ -1,0 +1,38 @@
+# Binaries
+bin/
+*.exe
+*.out
+
+# Go
+vendor/
+
+# Config (contains secrets)
+configs/config.local.yaml
+configs/providers.yaml
+
+# Frontend
+web/node_modules/
+web/dist/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Project Brain & Editor
+.brain/
+.cursor/
+.claude/settings.local.json
+
+# Logs
+*.log
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Air (hot reload)
+tmp/
