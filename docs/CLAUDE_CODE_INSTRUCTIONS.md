@@ -19,6 +19,7 @@ Read these documents in this order when starting a new task:
 | Document | When to Read | Content |
 |----------|-------------|---------|
 | **CLAUDE.md** | Always (should be auto-loaded) | Tech stack, project structure, coding standards, all conventions |
+| **PHASE1_TASKLIST.md** | **First task of any Phase 1 session** | Authoritative work order for Phase 1: nine task cards (P1.1–P1.9) with owner model, scope in/out, dependencies, acceptance criteria |
 | **ARCHITECTURE.md** | When working on cross-cutting features or system design | Subsystem details, data flow, deployment topology |
 | **DATABASE_SCHEMA.md** | When creating migrations or writing queries | Complete schema, index strategy, conventions |
 | **DEVELOPMENT_PLAYBOOK.md** | When implementing any feature | Step-by-step patterns for adding APIs, providers, tasks, pages |
@@ -29,6 +30,123 @@ Read these documents in this order when starting a new task:
 > **When an ADR conflicts with an older line in this document, the ADR wins.**
 > The ADRs are the most recent source of truth and supersede any stale
 > description here.
+
+---
+
+## Model Selection Policy
+
+> Which Claude model should run which task. This is the single source of
+> truth — if `PHASE1_TASKLIST.md` assigns an owner model to a card, it is
+> derived from the rules below.
+
+Claude Code sessions should pick a model based on the **risk and
+reversibility** of the work, not on "how big" it feels. Size is a poor
+proxy for safety; blast radius is the right one.
+
+### Use **Opus** when
+
+The work touches **safety-critical, non-local, hard-to-reverse** logic.
+A bug here silently corrupts state, leaks across subsystems, or can only
+be caught by running the system under load. Specifically:
+
+- **The domain state machine and `Transition()` write path**
+  (CLAUDE.md Critical Rule #8, ADR-0002 D2). Any change to
+  `internal/domain/statemachine.go`, `internal/domain/service.go::Transition`,
+  `store/postgres/domain.go::updateStatusTx`, or the `check-status-writes`
+  CI gate.
+- **Switch-lock double locking** (Redis fast path + Postgres `SELECT ... FOR
+  UPDATE`, ADR-0002 D1). Concurrency bugs in
+  `internal/switcher/service.go::acquireSwitchLock` can cause double
+  switching under Redis loss.
+- **Prefix-rule soft-freeze + rebuild release** (ADR-0002 D3, CLAUDE.md
+  Rule #9). The guard that rejects runtime-field edits without a rebuild
+  release, and the rebuild release dispatch path.
+- **Pool state-machine transitions** beyond the naive promote path
+  (ADR-0002 D6). `OnMainDomainBlocked`, `Unblock`, `Retire`, and the
+  `pool ↔ main_domains` invariant.
+- **Provider interface signatures** (not the concrete implementations —
+  see Sonnet below). Any change to `pkg/provider/dns/provider.go` or
+  `pkg/provider/cdn/provider.go` freezes the shape of every current and
+  future provider. Pick wrong once, pay forever.
+- **Initial schema decisions and migration ordering.** Phase 1 still has
+  the pre-launch edit-in-place exception; after cutover, every migration
+  is permanent. Schema decisions belong to Opus during Phase 1 and
+  **always** to Opus after cutover.
+- **ADR authoring.** New ADRs or revisions to existing ones.
+- **Cross-cutting refactors** that touch ≥ 3 subsystems at once.
+- **Race conditions, transaction boundaries, and lock ordering.** Any
+  place where "two goroutines do this at the same time" is a legitimate
+  question.
+- **Any task that requires holding 2+ of CLAUDE.md / an ADR / the schema /
+  the playbook in mind simultaneously** to avoid drift.
+
+### Use **Sonnet** when
+
+The work is **well-specified, locally scoped, and mechanically reversible**.
+The spec already exists in CLAUDE.md, `DATABASE_SCHEMA.md`, or
+`DEVELOPMENT_PLAYBOOK.md`; the job is to translate that spec into code
+without inventing new patterns. Specifically:
+
+- Implementing a new API endpoint that follows `DEVELOPMENT_PLAYBOOK.md` §1
+  (handler → service → store → router → tests).
+- Writing store methods (`sqlx` queries, struct scanning, transactions)
+  whose schema is already defined in `DATABASE_SCHEMA.md`.
+- Writing migrations whose SQL is already specified in `DATABASE_SCHEMA.md`.
+  (Deciding **what** the schema should be → Opus. Typing it out → Sonnet.)
+- Implementing **concrete** DNS/CDN providers (cloudflare.go, aliyun.go,
+  tencent.go, …) once the interface is frozen — the vendor SDK calls are
+  the hard part, not the architecture.
+- Writing `asynq` task handlers whose payload shape and queue are already
+  decided.
+- Registering routes, wiring middleware stacks, boilerplate composition
+  in `cmd/*/main.go`.
+- Vue 3 views, API clients, Pinia stores, TypeScript DTO mirroring.
+- Table-driven unit tests and contract-test helpers.
+- Auth: JWT sign/verify, password hashing, RBAC middleware — standard
+  patterns with well-known pitfalls.
+
+### Use **Haiku** when
+
+The work is **surface-level mechanical** — no design decisions, no
+reading of business rules:
+
+- Code formatting, import reorganization, lint fixes.
+- Renaming a variable consistently across files.
+- Adding missing `// Package foo ...` doc comments.
+- Typo fixes in docs.
+- Moving a file and updating import paths.
+
+### Escalation rule
+
+If a Sonnet session discovers mid-task that it's about to:
+
+1. Touch anything in the **Opus list** above, or
+2. Add an `UPDATE main_domains SET status` outside of `updateStatusTx`, or
+3. Invent a new pattern not in CLAUDE.md or the playbook, or
+4. Make a decision that feels like "I'm guessing what the user wants
+   here" on an architectural question,
+
+...it should **stop, summarize what it found, and ask the user to switch
+to Opus** rather than forging ahead. Half-done tasks are cheap to resume;
+silently wrong architecture is expensive to unwind.
+
+Conversely, if an Opus session is burning context on mechanical work
+(long stretches of "implement this exact SQL from the schema doc"), it
+should suggest the user **switch back to Sonnet** for the typing-heavy
+parts. Opus is the scarce resource — spend it on decisions, not
+translation.
+
+### Anti-patterns (do not do these)
+
+- **"I'll use Opus because this task is important."** Importance is not
+  the criterion; reversibility and cross-cutting impact are. Writing the
+  frontend login page is important but not Opus-worthy.
+- **"I'll use Sonnet because the state machine is only 30 lines."** Line
+  count is not the criterion. 30 lines of state machine + 1 race test +
+  1 CI gate is Opus work regardless of size.
+- **"Claude is Claude, the model doesn't matter."** For tasks on the Opus
+  list, the cost of a subtle bug ≫ the cost difference between models.
+  For tasks on the Sonnet list, Opus is wasted budget.
 
 ---
 
