@@ -1,7 +1,8 @@
 /**
  * Design Tokens — Single source of truth for all visual values.
  *
- * Theme: Soft Light — comfortable, elegant, fresh.
+ * Theme: Operational Clarity — dark sidebar, bright content, clean data presentation.
+ * Reference aesthetic: Linear, Vercel dashboard, Grafana.
  *
  * Rules:
  *  - NEVER hardcode a color/spacing/font-size in a component.
@@ -13,11 +14,20 @@
 
 export const colors = {
   // Backgrounds
-  bgPage:    '#f0f4f8',  // page root — soft blue-gray wash
-  bgCard:    '#ffffff',  // card, table, modal surface
-  bgInput:   '#f8fafc',  // input, select background
-  bgHover:   'rgba(79, 126, 248, 0.05)',  // row hover — barely-there blue tint
-  bgSidebar: '#ffffff',  // sidebar surface
+  bgPage:         '#f0f4f8',              // page root — soft blue-gray wash
+  bgCard:         '#ffffff',              // card, table, modal surface
+  bgSurface:      '#ffffff',              // card/panel surface (alias for bgCard)
+  bgSurfaceRaised:'#f8fafc',             // slightly raised (table header, sub-sections)
+  bgInput:        '#f8fafc',              // input, select background
+  bgHover:        'rgba(79, 126, 248, 0.05)',  // row hover — barely-there blue tint
+
+  // Sidebar — dark slate theme
+  bgSidebar:       '#0f172a',             // deep navy slate
+  bgSidebarHover:  'rgba(255,255,255,0.06)',
+  bgSidebarActive: 'rgba(79,126,248,0.18)',
+  sidebarText:     '#94a3b8',
+  sidebarTextActive:'#ffffff',
+  sidebarBorder:   'rgba(255,255,255,0.08)',
 
   // Borders & dividers
   border:    '#e4e9f2',
@@ -33,25 +43,25 @@ export const colors = {
   primaryHover:   '#3b6ef0',
   primaryPressed: '#2c5de0',
 
-  // Status semantic colors — muted for light backgrounds.
+  // Status semantic colors — richer, higher-contrast for dark-sidebar context.
   // Three state machines (Domain Lifecycle / Release / Agent) all share
   // these six semantic buckets via the StatusTag component's semanticMap.
   // See FRONTEND_GUIDE.md §"顏色使用規範".
   statusSemantic: {
-    success:   { color: '#16a34a', bg: 'rgba(22,163,74,0.08)'   },  // active, online, succeeded, idle
-    progress:  { color: '#d97706', bg: 'rgba(217,119,6,0.08)'   },  // executing, busy, provisioned, pending, planning, ready
-    warning:   { color: '#ea580c', bg: 'rgba(234,88,12,0.08)'   },  // paused, draining, requested, approved
-    danger:    { color: '#dc2626', bg: 'rgba(220,38,38,0.08)'   },  // failed, error, rolling_back, rolled_back, disabled, offline
-    neutral:   { color: '#94a3b8', bg: 'rgba(148,163,184,0.08)' },  // retired, cancelled, registered
-    upgrading: { color: '#7c3aed', bg: 'rgba(124,58,237,0.08)'  },  // upgrading
+    success:   { color: '#15803d', bg: 'rgba(21,128,61,0.10)',   border: 'rgba(21,128,61,0.20)'   },  // active, online, succeeded, idle
+    progress:  { color: '#b45309', bg: 'rgba(180,83,9,0.10)',    border: 'rgba(180,83,9,0.20)'    },  // executing, busy, provisioned, pending, planning, ready
+    warning:   { color: '#c2410c', bg: 'rgba(194,65,12,0.10)',   border: 'rgba(194,65,12,0.20)'   },  // paused, draining, requested, approved
+    danger:    { color: '#b91c1c', bg: 'rgba(185,28,28,0.10)',   border: 'rgba(185,28,28,0.20)'   },  // failed, error, rolling_back, rolled_back, disabled, offline
+    neutral:   { color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.20)' },  // retired, cancelled, registered
+    upgrading: { color: '#6d28d9', bg: 'rgba(109,40,217,0.10)',  border: 'rgba(109,40,217,0.20)'  },  // upgrading
   },
 
   // Alert severity (PRD §16 — P1 / P2 / P3 / INFO)
   severity: {
-    P1:   { color: '#dc2626', bg: 'rgba(220,38,38,0.08)'   },
-    P2:   { color: '#ea580c', bg: 'rgba(234,88,12,0.08)'   },
+    P1:   { color: '#b91c1c', bg: 'rgba(185,28,28,0.10)'   },
+    P2:   { color: '#c2410c', bg: 'rgba(194,65,12,0.10)'   },
     P3:   { color: '#2563eb', bg: 'rgba(37,99,235,0.08)'   },
-    INFO: { color: '#16a34a', bg: 'rgba(22,163,74,0.08)'   },
+    INFO: { color: '#15803d', bg: 'rgba(21,128,61,0.10)'   },
   },
 } as const
 
@@ -95,6 +105,9 @@ export const lineHeight = {
   relaxed: 1.6,
 } as const
 
+// Monospace stack for technical values: UUIDs, checksums, release IDs, agent IDs
+export const fontMono = "ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace"
+
 // ── Borders ─────────────────────────────────────────────────────────────────
 
 export const borderRadius = {
@@ -105,25 +118,33 @@ export const borderRadius = {
   full: '9999px',
 } as const
 
-// ── Shadows — light, layered, modern ─────────────────────────────────────────
+// ── Shadows — layered, modern depth ──────────────────────────────────────────
 
 export const shadow = {
-  xs:    '0 1px 2px rgba(15,23,42,0.04)',
-  card:  '0 1px 3px rgba(15,23,42,0.06), 0 4px 12px rgba(15,23,42,0.06)',
-  modal: '0 8px 40px rgba(15,23,42,0.14), 0 2px 8px rgba(15,23,42,0.08)',
-  glow:  '0 0 0 3px rgba(79,126,248,0.18)',
+  sm:       '0 1px 2px rgba(15,23,42,0.04), 0 1px 4px rgba(15,23,42,0.04)',
+  card:     '0 0 0 1px rgba(15,23,42,0.06), 0 2px 8px rgba(15,23,42,0.06)',
+  elevated: '0 0 0 1px rgba(15,23,42,0.08), 0 4px 16px rgba(15,23,42,0.10)',
+  modal:    '0 0 0 1px rgba(15,23,42,0.10), 0 16px 48px rgba(15,23,42,0.16)',
+  glow:     '0 0 0 3px rgba(79,126,248,0.18)',
 } as const
 
 // ── Layout constants ─────────────────────────────────────────────────────────
 
 export const layout = {
-  sidebarWidth:    '220px',
-  headerHeight:    '56px',
-  pageHeaderHeight:'64px',
-  tableRowHeight:  '48px',
-  searchBarHeight: '52px',
-  contentMaxWidth: '1400px',
-  contentPadding:  '24px',
+  sidebarWidth:         '220px',
+  sidebarCollapsedWidth:'56px',
+  headerHeight:         '56px',
+  pageHeaderHeight:     '64px',
+  tableRowHeight:       '48px',
+  searchBarHeight:      '52px',
+  contentMaxWidth:      '1400px',
+  contentPadding:       '24px',
+  // Sidebar group label typography
+  sidebarGroupLabel: {
+    fontSize:      '11px',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.8px',
+  },
 } as const
 
 // ── Naive UI theme overrides (imported in App.vue) ──────────────────────────
@@ -144,7 +165,7 @@ export const naiveThemeOverrides: GlobalThemeOverrides = {
     popoverColor:       colors.bgCard,
     tableColor:         colors.bgCard,
     tableColorHover:    colors.bgHover,
-    tableHeaderColor:   '#f8fafc',
+    tableHeaderColor:   colors.bgSurfaceRaised,
     inputColor:         colors.bgInput,
     inputColorDisabled: '#f1f5f9',
 

@@ -2,30 +2,31 @@
 withDefaults(defineProps<{
   label:   string
   value:   string | number
-  // Optional accent color (use colors.xxx from tokens)
+  // Accent color — use colors.xxx from tokens (e.g. colors.statusSemantic.success.color)
   color?:  string
   // Optional trend: positive = green, negative = red
   trend?:  number
   suffix?: string
 }>(), {
-  color: '#38bdf8',
+  color: '#4f7ef8',
 })
 </script>
 
 <!--
   Usage:
-    <StatCard label="正常域名" :value="1024" color="#4ade80" :trend="12" />
-    <StatCard label="已封鎖"   :value="3"    color="#ef4444" suffix="個" />
+    <StatCard label="活躍 Releases"  :value="stats.executing" color="#b45309" />
+    <StatCard label="在線 Agent"     :value="24"              color="#15803d" :trend="3" />
+    <StatCard label="失敗 / 待處理"  :value="stats.failed"    color="#b91c1c" suffix="個" />
 -->
 <template>
   <div class="stat-card">
+    <!-- Left accent bar — 3px wide, full height, color = props.color -->
     <div class="stat-card__accent" :style="{ backgroundColor: color }" />
+
     <div class="stat-card__body">
       <p class="stat-card__label">{{ label }}</p>
       <div class="stat-card__value-row">
-        <span class="stat-card__value" :style="{ color }">
-          {{ value }}
-        </span>
+        <span class="stat-card__value">{{ value }}</span>
         <span v-if="suffix" class="stat-card__suffix">{{ suffix }}</span>
         <span
           v-if="trend !== undefined"
@@ -42,29 +43,33 @@ withDefaults(defineProps<{
 <style scoped>
 .stat-card {
   display: flex;
-  gap: var(--space-3);
-  padding: var(--space-5) var(--space-5);
-  background-color: var(--bg-card);
+  flex-direction: row;
+  align-items: stretch;
+  background-color: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   position: relative;
+  transition: box-shadow 0.15s;
+}
+.stat-card:hover {
+  box-shadow: var(--shadow-elevated);
 }
 
 .stat-card__accent {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  flex-shrink: 0;
   width: 3px;
-  border-radius: 8px 0 0 8px;
+  border-radius: 10px 0 0 10px;
+  align-self: stretch;
 }
 
 .stat-card__body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding-left: var(--space-2);
+  padding: 20px 24px;
+  gap: 4px;
+  flex: 1;
 }
 
 .stat-card__label {
@@ -72,19 +77,22 @@ withDefaults(defineProps<{
   font-weight: 500;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
+  line-height: 1;
 }
 
 .stat-card__value-row {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
+  margin-top: 4px;
 }
 
 .stat-card__value {
   font-size: 28px;
   font-weight: 700;
-  line-height: 1;
+  color: var(--text-primary);
+  line-height: 1.2;
 }
 
 .stat-card__suffix {
@@ -96,6 +104,6 @@ withDefaults(defineProps<{
   font-size: 12px;
   font-weight: 500;
 }
-.trend-up   { color: #4ade80; }
-.trend-down { color: #f87171; }
+.trend-up   { color: #15803d; }
+.trend-down { color: #b91c1c; }
 </style>

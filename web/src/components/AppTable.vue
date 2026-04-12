@@ -4,6 +4,11 @@ import { NDataTable, NPagination } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import EmptyState from './EmptyState.vue'
 
+// NOTE for column definitions:
+//   UUIDs, checksums, release IDs, agent IDs → add class="mono" to the cell renderer
+//   Example:
+//     { title: 'UUID', key: 'uuid', render: (row) => h('span', { class: 'mono' }, row.uuid) }
+
 const props = withDefaults(defineProps<{
   columns:    DataTableColumns<T>
   data:       T[]
@@ -37,6 +42,9 @@ const isEmpty = computed(() => !props.loading && props.data.length === 0)
       :item-count="total"
       @update:page="page = $event"
     />
+
+  For UUID/hash/ID columns, use class="mono" on the cell element to apply
+  ui-monospace font automatically. See var(--font-mono) in global.css.
 -->
 <template>
   <div class="app-table">
@@ -73,10 +81,15 @@ const isEmpty = computed(() => !props.loading && props.data.length === 0)
   flex-direction: column;
   flex: 1;
   overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-card);
 }
 
 .app-table__inner {
   flex: 1;
+  border-radius: 10px;
 }
 
 /* Standardise row height */
@@ -84,19 +97,25 @@ const isEmpty = computed(() => !props.loading && props.data.length === 0)
   height: var(--table-row-height);
 }
 
-/* Header background */
+/* Table header — raised surface with uppercase compact labels */
 .app-table__inner :deep(.n-data-table-th) {
-  background-color: var(--bg-page) !important;
-  font-size: 12px;
+  background-color: var(--bg-surface-raised) !important;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   color: var(--text-muted);
 }
 
 /* Row hover */
 .app-table__inner :deep(.n-data-table-tr:hover .n-data-table-td) {
   background-color: var(--bg-hover) !important;
+}
+
+/* Mono cell class — apply to UUID/hash/ID cells */
+.app-table__inner :deep(.mono-cell) {
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 .app-table__pagination {

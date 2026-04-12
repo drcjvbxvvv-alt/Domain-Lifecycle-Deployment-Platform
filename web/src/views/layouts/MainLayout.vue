@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NLayout, NLayoutSider, NLayoutContent, NMenu, NAvatar, NDropdown, NText } from 'naive-ui'
-import type { MenuOption } from 'naive-ui'
+import { NLayout, NLayoutSider, NLayoutContent, NAvatar, NDropdown } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -11,47 +10,49 @@ const auth   = useAuthStore()
 
 const collapsed = ref(false)
 
-const menuOptions: MenuOption[] = [
+// Nav items grouped for the sidebar
+interface NavItem {
+  label: string
+  key: string
+  icon: string
+}
+
+interface NavGroup {
+  groupLabel: string
+  items: NavItem[]
+}
+
+const navGroups: NavGroup[] = [
   {
-    label: '專案管理',
-    key: '/projects',
-    icon: () => '📁',
+    groupLabel: '業務管理',
+    items: [
+      { label: '專案管理',   key: '/projects', icon: 'folder'   },
+      { label: '域名管理',   key: '/domains',  icon: 'globe'    },
+      { label: '發布管理',   key: '/releases', icon: 'rocket'   },
+    ],
   },
   {
-    label: '域名管理',
-    key: '/domains',
-    icon: () => '🌐',
+    groupLabel: '運維監控',
+    items: [
+      { label: '告警記錄',   key: '/alerts',   icon: 'bell'     },
+      { label: 'Agent 管理', key: '/agents',   icon: 'server'   },
+    ],
   },
   {
-    label: '發布管理',
-    key: '/releases',
-    icon: () => '🚀',
-  },
-  {
-    label: '告警記錄',
-    key: '/alerts',
-    icon: () => '🔔',
-  },
-  {
-    label: 'Agent 管理',
-    key: '/agents',
-    icon: () => '🖥️',
-  },
-  {
-    label: '使用者管理',
-    key: '/settings/users',
-    icon: () => '👥',
+    groupLabel: '設定',
+    items: [
+      { label: '使用者管理', key: '/settings/users', icon: 'users' },
+    ],
   },
 ]
 
 const activeKey = computed(() => {
   const path = route.path
-  // Match longest prefix
-  const keys = menuOptions.map(o => o.key as string)
-  return keys.find(k => path.startsWith(k)) ?? path
+  const allKeys = navGroups.flatMap(g => g.items.map(i => i.key))
+  return allKeys.find(k => path.startsWith(k)) ?? path
 })
 
-function onMenuSelect(key: string) {
+function navigate(key: string) {
   router.push(key)
 }
 
@@ -65,59 +66,134 @@ function onUserAction(key: string) {
     router.push('/login')
   }
 }
+
+// Page title from route meta with fallback
+const pageTitle = computed(() => (route.meta?.title as string | undefined) ?? '域名生命週期管理平台')
+
+// SVG icon helper — returns inline SVG string for nav icons
+function getIconSvg(name: string): string {
+  const icons: Record<string, string> = {
+    folder: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+    globe:  `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+    rocket: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>`,
+    bell:   `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`,
+    server: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`,
+    users:  `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  }
+  return icons[name] ?? icons['folder']
+}
 </script>
 
 <template>
   <NLayout style="height: 100vh;" has-sider>
-    <!-- Sidebar -->
+    <!-- ─── Sidebar ─────────────────────────────────────────────────────── -->
     <NLayoutSider
-      bordered
       collapse-mode="width"
-      :collapsed-width="64"
+      :collapsed-width="56"
       :width="220"
       :collapsed="collapsed"
-      show-trigger
       @collapse="collapsed = true"
       @expand="collapsed = false"
-      style="background: var(--bg-sidebar);"
+      style="background: var(--bg-sidebar); border-right: 1px solid var(--sidebar-border);"
     >
-      <!-- Logo -->
-      <div class="sidebar-logo">
-        <span v-if="!collapsed" class="logo-text">域名平台</span>
-        <span v-else class="logo-icon">🌐</span>
+      <!-- Logo / Brand -->
+      <div class="sidebar-logo" :class="{ 'sidebar-logo--collapsed': collapsed }">
+        <div class="sidebar-logo__icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4f7ef8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+        </div>
+        <span v-if="!collapsed" class="sidebar-logo__text">域名平台</span>
       </div>
 
-      <NMenu
-        :options="menuOptions"
-        :value="activeKey"
-        :collapsed="collapsed"
-        :collapsed-width="64"
-        :collapsed-icon-size="20"
-        @update:value="onMenuSelect"
-      />
+      <!-- Collapse toggle -->
+      <button class="sidebar-collapse-btn" @click="collapsed = !collapsed" :title="collapsed ? '展開' : '收合'">
+        <svg v-if="!collapsed" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+
+      <!-- Nav groups -->
+      <nav class="sidebar-nav">
+        <div v-for="group in navGroups" :key="group.groupLabel" class="sidebar-nav__group">
+          <!-- Group label (hidden when collapsed) -->
+          <span v-if="!collapsed" class="sidebar-nav__group-label">{{ group.groupLabel }}</span>
+
+          <!-- Nav items -->
+          <button
+            v-for="item in group.items"
+            :key="item.key"
+            class="sidebar-nav__item"
+            :class="{ 'sidebar-nav__item--active': activeKey === item.key }"
+            :title="collapsed ? item.label : undefined"
+            @click="navigate(item.key)"
+          >
+            <!-- Active indicator bar -->
+            <span v-if="activeKey === item.key" class="sidebar-nav__active-bar" />
+            <!-- Icon -->
+            <span class="sidebar-nav__icon" v-html="getIconSvg(item.icon)" />
+            <!-- Label -->
+            <span v-if="!collapsed" class="sidebar-nav__label">{{ item.label }}</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Bottom: user info -->
+      <div class="sidebar-user" :class="{ 'sidebar-user--collapsed': collapsed }">
+        <div class="sidebar-user__divider" />
+        <NDropdown :options="userDropdownOptions" @select="onUserAction" placement="top-start">
+          <div class="sidebar-user__inner">
+            <NAvatar round size="small" style="background: #1e40af; color: #fff; font-size: 11px; flex-shrink: 0;">
+              {{ auth.user?.username?.[0]?.toUpperCase() ?? 'U' }}
+            </NAvatar>
+            <span v-if="!collapsed" class="sidebar-user__name">{{ auth.user?.username ?? '使用者' }}</span>
+            <span v-if="!collapsed" class="sidebar-user__logout-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </span>
+          </div>
+        </NDropdown>
+      </div>
     </NLayoutSider>
 
-    <!-- Main content area -->
+    <!-- ─── Main content area ───────────────────────────────────────────── -->
     <NLayout>
       <!-- Top header -->
       <div class="main-header">
-        <div class="header-title">
-          <NText>{{ route.meta.title ?? '域名生命週期管理平台' }}</NText>
+        <div class="header-breadcrumb">
+          <span class="header-title">{{ pageTitle }}</span>
         </div>
         <div class="header-right">
+          <!-- Notification bell (placeholder) -->
+          <button class="header-icon-btn" title="通知">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+          </button>
+
+          <!-- User avatar dropdown -->
           <NDropdown :options="userDropdownOptions" @select="onUserAction">
-            <div class="user-menu">
-              <NAvatar round size="small">
+            <div class="header-user">
+              <NAvatar round size="small" style="background: #1e40af; color: #fff; font-size: 11px;">
                 {{ auth.user?.username?.[0]?.toUpperCase() ?? 'U' }}
               </NAvatar>
-              <span v-if="auth.user" class="user-name">{{ auth.user.username }}</span>
+              <span v-if="auth.user" class="header-user__name">{{ auth.user.username }}</span>
             </div>
           </NDropdown>
         </div>
       </div>
 
       <!-- Page content -->
-      <NLayoutContent class="page-content">
+      <NLayoutContent class="layout-content">
         <RouterView />
       </NLayoutContent>
     </NLayout>
@@ -125,52 +201,224 @@ function onUserAction(key: string) {
 </template>
 
 <style scoped>
+/* ── Sidebar Logo ─────────────────────────────────────────────────────── */
 .sidebar-logo {
   height: 56px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 700;
-  font-size: 16px;
-  color: var(--primary);
+  border-bottom: 1px solid var(--sidebar-border);
   white-space: nowrap;
   overflow: hidden;
 }
+.sidebar-logo--collapsed {
+  justify-content: center;
+  padding: 0;
+}
+.sidebar-logo__text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sidebar-text-active);
+  letter-spacing: 0.5px;
+}
 
-.logo-text { letter-spacing: 1px; }
-.logo-icon { font-size: 20px; }
+/* ── Sidebar Collapse Button ──────────────────────────────────────────── */
+.sidebar-collapse-btn {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--sidebar-text);
+  opacity: 0.5;
+  transition: opacity 0.15s;
+  margin-top: 4px;
+}
+.sidebar-collapse-btn:hover {
+  opacity: 1;
+}
 
+/* ── Sidebar Nav ──────────────────────────────────────────────────────── */
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px;
+}
+.sidebar-nav__group {
+  margin-bottom: 4px;
+}
+.sidebar-nav__group-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--sidebar-text);
+  opacity: 0.5;
+  padding: 12px 8px 4px;
+  white-space: nowrap;
+}
+.sidebar-nav__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--sidebar-text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 0.12s, color 0.12s;
+  margin-bottom: 1px;
+}
+.sidebar-nav__item:hover {
+  background: var(--bg-sidebar-hover);
+  color: #cbd5e1;
+}
+.sidebar-nav__item--active {
+  background: var(--bg-sidebar-active);
+  color: var(--sidebar-text-active);
+}
+.sidebar-nav__active-bar {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary);
+}
+.sidebar-nav__icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.sidebar-nav__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Sidebar User ─────────────────────────────────────────────────────── */
+.sidebar-user {
+  padding: 8px;
+}
+.sidebar-user--collapsed {
+  display: flex;
+  justify-content: center;
+}
+.sidebar-user__divider {
+  height: 1px;
+  background: var(--sidebar-border);
+  margin-bottom: 8px;
+}
+.sidebar-user__inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  overflow: hidden;
+}
+.sidebar-user__inner:hover {
+  background: var(--bg-sidebar-hover);
+}
+.sidebar-user__name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--sidebar-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-user__logout-icon {
+  color: var(--sidebar-text);
+  opacity: 0.5;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Main Header ──────────────────────────────────────────────────────── */
 .main-header {
-  height: 56px;
+  height: var(--header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-card);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
 }
-
-.header-title { font-weight: 600; font-size: 15px; color: var(--text-primary); }
-
-.header-right { display: flex; align-items: center; gap: 12px; }
-
-.user-menu {
+.header-breadcrumb {
+  display: flex;
+  align-items: center;
+}
+.header-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+}
+.header-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.header-user {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 6px;
-  transition: background 0.15s;
+  border-radius: 8px;
+  transition: background 0.12s;
 }
-.user-menu:hover { background: var(--bg-hover); }
-.user-name { font-size: 13px; color: var(--text-secondary); }
+.header-user:hover {
+  background: var(--bg-hover);
+}
+.header-user__name {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 
-.page-content {
+/* ── Layout Content ───────────────────────────────────────────────────── */
+.layout-content {
   padding: 24px;
   overflow-y: auto;
-  height: calc(100vh - 56px);
+  height: calc(100vh - var(--header-height));
 }
 </style>
