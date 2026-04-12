@@ -88,9 +88,11 @@ func main() {
 	domainTaskStore := postgres.NewDomainTaskStore(db)
 	agentStore := postgres.NewAgentStore(db)
 	rollbackStore := postgres.NewRollbackStore(db)
+	hostGroupStore := postgres.NewHostGroupStore(db)
 	pkgStorage := pkgstorage.NewMinIOStorage(storageClient, cfg.Storage.ArtifactsBucket)
-	releaseSvc := release.NewService(releaseStore, domainStore, templateStore, agentStore, artifactStore, domainTaskStore, rollbackStore, pkgStorage, asynqClient, logger)
+	releaseSvc := release.NewService(releaseStore, domainStore, templateStore, agentStore, artifactStore, domainTaskStore, rollbackStore, hostGroupStore, pkgStorage, asynqClient, logger)
 	releaseHandler := handler.NewReleaseHandler(releaseSvc, logger)
+	hostGroupHandler := handler.NewHostGroupHandler(hostGroupStore, logger)
 
 	agentSvc := agentsvc.NewService(agentStore, logger)
 	agentProtocolHandler := handler.NewAgentProtocolHandler(agentSvc, logger)
@@ -98,14 +100,15 @@ func main() {
 
 	// ── Management API listener (:8080, JWT auth) ──────────────────────────
 	mgmtRouter := buildManagementRouter(logger, router.Deps{
-		AuthHandler:     authHandler,
-		ProjectHandler:  projectHandler,
-		DomainHandler:   domainHandler,
-		TemplateHandler: templateHandler,
-		ArtifactHandler: artifactHandler,
-		ReleaseHandler:  releaseHandler,
-		AgentHandler:    agentHandler,
-		JWTManager:      jwtMgr,
+		AuthHandler:      authHandler,
+		ProjectHandler:   projectHandler,
+		DomainHandler:    domainHandler,
+		TemplateHandler:  templateHandler,
+		ArtifactHandler:  artifactHandler,
+		ReleaseHandler:   releaseHandler,
+		AgentHandler:     agentHandler,
+		HostGroupHandler: hostGroupHandler,
+		JWTManager:       jwtMgr,
 	})
 	mgmtAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	mgmtServer := &http.Server{

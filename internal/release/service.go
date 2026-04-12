@@ -27,6 +27,7 @@ type Service struct {
 	artifacts   *postgres.ArtifactStore
 	domainTasks *postgres.DomainTaskStore
 	rollbacks   *postgres.RollbackStore
+	hostGroups  *postgres.HostGroupStore
 	storage     storage.Storage
 	tasks       *asynq.Client
 	logger      *zap.Logger
@@ -40,6 +41,7 @@ func NewService(
 	artifacts *postgres.ArtifactStore,
 	domainTasks *postgres.DomainTaskStore,
 	rollbacks *postgres.RollbackStore,
+	hostGroups *postgres.HostGroupStore,
 	storage storage.Storage,
 	tasks *asynq.Client,
 	logger *zap.Logger,
@@ -52,6 +54,7 @@ func NewService(
 		artifacts:   artifacts,
 		domainTasks: domainTasks,
 		rollbacks:   rollbacks,
+		hostGroups:  hostGroups,
 		storage:     storage,
 		tasks:       tasks,
 		logger:      logger,
@@ -510,9 +513,11 @@ func (s *Service) DispatchShard(ctx context.Context, releaseDBID int64, shardID 
 		// Don't fail — agent_tasks will be created but won't be claimed until agents come online
 	}
 
-	// For P2.1: assign domain_tasks round-robin across available agents.
-	// If no agents online, still create tasks assigned to the first agent found
-	// (they'll be picked up when agents come online).
+	// P2.2/P2.5: assign domain_tasks round-robin across available agents,
+	// then apply nginx reload batching (Critical Rule #7).
+
+	// Build dispatch items (one per domain_task).
+	items := make([]dispatchItem, 0, len(domainTaskRows))
 	for i, dt := range domainTaskRows {
 		domain, err := s.domains.GetByID(ctx, dt.DomainID)
 		if err != nil {
@@ -520,7 +525,7 @@ func (s *Service) DispatchShard(ctx context.Context, releaseDBID int64, shardID 
 			continue
 		}
 
-		// Select agent: round-robin among online agents, or by host_group if specified
+		// Select agent: prefer host_group agents, fallback to global round-robin.
 		var targetAgent *postgres.Agent
 		if dt.HostGroupID != nil && *dt.HostGroupID > 0 {
 			hgAgents, err := s.agents.ListOnlineByHostGroup(ctx, *dt.HostGroupID)
@@ -540,7 +545,6 @@ func (s *Service) DispatchShard(ctx context.Context, releaseDBID int64, shardID 
 			continue
 		}
 
-		// Build the TaskEnvelope payload
 		envelope := agentprotocol.TaskEnvelope{
 			Type:        agentprotocol.TaskTypeDeployHTML,
 			ReleaseID:   rel.ReleaseID,
@@ -550,34 +554,58 @@ func (s *Service) DispatchShard(ctx context.Context, releaseDBID int64, shardID 
 			DeployPath:  "/var/www",
 			NginxPath:   "/etc/nginx/conf.d",
 			AllowReload: true,
+			// DeferReload will be set by applyReloadBatching below.
 			Verify: agentprotocol.VerifyConfig{
 				Enabled:    true,
-				URL:        fmt.Sprintf("http://localhost"),
+				URL:        "http://localhost",
 				StatusCode: 200,
 				TimeoutMs:  5000,
 			},
 		}
-		envelopeJSON, _ := json.Marshal(envelope)
 
-		// Deterministic task_id
-		taskID := fmt.Sprintf("%s-%d-%d", rel.ReleaseID, dt.DomainID, targetAgent.ID)
-
-		agentTask := &postgres.AgentTask{
-			TaskID:       taskID,
+		items = append(items, dispatchItem{
 			DomainTaskID: dt.ID,
 			AgentDBID:    targetAgent.ID,
+			AgentID:      targetAgent.AgentID,
+			HostGroupID:  dt.HostGroupID,
 			ArtifactID:   *rel.ArtifactID,
-			ArtifactURL:  &presignedURL,
-			Payload:      string(envelopeJSON),
+			ArtifactURL:  presignedURL,
+			Envelope:     envelope,
+		})
+	}
+
+	// Fetch host_group settings (for reload_batch_size) and apply batching.
+	hostGroups := make(map[int64]*postgres.HostGroup)
+	for _, it := range items {
+		if it.HostGroupID != nil && *it.HostGroupID > 0 {
+			if _, seen := hostGroups[*it.HostGroupID]; !seen {
+				hg, err := s.hostGroups.GetByID(ctx, *it.HostGroupID)
+				if err == nil && hg != nil {
+					hostGroups[*it.HostGroupID] = hg
+				}
+			}
+		}
+	}
+	items = applyReloadBatching(items, hostGroups)
+
+	// Persist agent_tasks.
+	for _, it := range items {
+		taskID := fmt.Sprintf("%s-%d-%d", rel.ReleaseID, it.DomainTaskID, it.AgentDBID)
+		payload := envelopeJSON(it.Envelope)
+		agentTask := &postgres.AgentTask{
+			TaskID:       taskID,
+			DomainTaskID: it.DomainTaskID,
+			AgentDBID:    it.AgentDBID,
+			ArtifactID:   it.ArtifactID,
+			ArtifactURL:  &it.ArtifactURL,
+			Payload:      payload,
 		}
 		if _, err := s.agents.CreateAgentTask(ctx, agentTask); err != nil {
 			s.logger.Error("create agent task", zap.Error(err),
-				zap.String("fqdn", domain.FQDN), zap.String("agent", targetAgent.AgentID))
+				zap.Int64("domain_task_id", it.DomainTaskID), zap.String("agent", it.AgentID))
 			continue
 		}
-
-		// Update domain_task status to dispatched
-		if err := s.domainTasks.UpdateStatus(ctx, dt.ID, "dispatched", nil); err != nil {
+		if err := s.domainTasks.UpdateStatus(ctx, it.DomainTaskID, "dispatched", nil); err != nil {
 			s.logger.Error("update domain task to dispatched", zap.Error(err))
 		}
 	}

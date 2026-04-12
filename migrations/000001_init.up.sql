@@ -171,15 +171,19 @@ CREATE INDEX idx_artifacts_project  ON artifacts (project_id, built_at DESC);
 -- HOST GROUPS                                                [P1]
 -- ============================================================
 CREATE TABLE host_groups (
-    id          BIGSERIAL PRIMARY KEY,
-    uuid        UUID NOT NULL DEFAULT gen_random_uuid(),
-    project_id  BIGINT NOT NULL REFERENCES projects(id),
-    name        VARCHAR(100) NOT NULL,
-    description TEXT,
-    region      VARCHAR(64),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at  TIMESTAMPTZ,
+    id                      BIGSERIAL PRIMARY KEY,
+    uuid                    UUID NOT NULL DEFAULT gen_random_uuid(),
+    project_id              BIGINT NOT NULL REFERENCES projects(id),
+    name                    VARCHAR(100) NOT NULL,
+    description             TEXT,
+    region                  VARCHAR(64),
+    -- P2.5: per-host concurrency + nginx reload batching
+    max_concurrency         INT NOT NULL DEFAULT 0,           -- 0 = unlimited
+    reload_batch_size       INT NOT NULL DEFAULT 50,          -- domains per batch before reload
+    reload_batch_wait_secs  INT NOT NULL DEFAULT 30,          -- seconds to buffer before reload
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at              TIMESTAMPTZ,
     CONSTRAINT uq_host_groups_project_name UNIQUE (project_id, name)
 );
 

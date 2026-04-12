@@ -300,9 +300,41 @@ func (s *AgentStore) UpdateAgentVersion(ctx context.Context, agentDBID int64, ve
 // ── Task queries ────────────────────────────────────────────────────────
 
 // NextPendingTask returns the oldest pending agent_task for the given agent, or nil.
+// If the agent's host_group has max_concurrency > 0, this returns nil when the
+// host_group already has that many tasks in claimed or running state.
 func (s *AgentStore) NextPendingTask(ctx context.Context, agentDBID int64) (*AgentTask, error) {
+	// Check host_group concurrency limit before serving the next task.
+	type limitRow struct {
+		HostGroupID    *int64 `db:"host_group_id"`
+		MaxConcurrency int    `db:"max_concurrency"`
+	}
+	var lr limitRow
+	err := s.db.QueryRowxContext(ctx,
+		`SELECT a.host_group_id,
+		        COALESCE(hg.max_concurrency, 0) AS max_concurrency
+		 FROM agents a
+		 LEFT JOIN host_groups hg ON hg.id = a.host_group_id
+		 WHERE a.id = $1`, agentDBID).StructScan(&lr)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("get agent concurrency limit: %w", err)
+	}
+
+	if lr.MaxConcurrency > 0 && lr.HostGroupID != nil {
+		var inFlight int
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM agent_tasks at
+			 JOIN agents a ON a.id = at.agent_id
+			 WHERE a.host_group_id = $1 AND at.status IN ('claimed', 'running')`,
+			*lr.HostGroupID).Scan(&inFlight); err != nil {
+			return nil, fmt.Errorf("count in-flight tasks: %w", err)
+		}
+		if inFlight >= lr.MaxConcurrency {
+			return nil, nil // host_group at capacity
+		}
+	}
+
 	var t AgentTask
-	err := s.db.GetContext(ctx, &t,
+	err = s.db.GetContext(ctx, &t,
 		`SELECT * FROM agent_tasks WHERE agent_id = $1 AND status = 'pending'
 		 ORDER BY created_at ASC LIMIT 1`, agentDBID)
 	if err == sql.ErrNoRows {

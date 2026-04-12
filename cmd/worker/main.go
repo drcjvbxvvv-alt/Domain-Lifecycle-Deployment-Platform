@@ -58,6 +58,7 @@ func main() {
 	releaseStore := postgres.NewReleaseStore(db)
 	domainTaskStore := postgres.NewDomainTaskStore(db)
 	rollbackStore := postgres.NewRollbackStore(db)
+	hostGroupStore := postgres.NewHostGroupStore(db)
 	jwtCfg := cfg.JWT
 
 	signingKey := jwtCfg.Secret // reuse JWT secret as HMAC signing key for P1
@@ -71,7 +72,7 @@ func main() {
 	// Release service (needed by release handlers + artifact build callback)
 	releaseSvc := release.NewService(
 		releaseStore, domainStore, templateStore, agentStore, artifactStore,
-		domainTaskStore, rollbackStore, minioStorage, asynqClient, logger,
+		domainTaskStore, rollbackStore, hostGroupStore, minioStorage, asynqClient, logger,
 	)
 
 	builder := artifact.NewBuilder(artifactStore, templateStore, minioStorage, signer, logger)

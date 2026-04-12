@@ -497,7 +497,7 @@ currently deployed files. This is a safety feature that prevents surprises.
 
 ---
 
-### P2.5 — Per-host concurrency control
+### P2.5 — Per-host concurrency control ✅ COMPLETED 2026-04-12
 
 **Owner**: Sonnet
 **Depends on**: P2.2 (multi-shard dispatch must work first)
@@ -577,6 +577,30 @@ host_group level and implements the nginx reload batching rule.
 - Agent tasks that don't report within 5 minutes are marked `timeout`
 - `PUT /api/v1/host-groups/:id` updates concurrency settings
 - `go test ./internal/release/...` passes
+
+**Delivered 2026-04-12**:
+- `migrations/000001_init.up.sql` — `host_groups` gains `max_concurrency`,
+  `reload_batch_size`, `reload_batch_wait_secs` (in-place pre-launch edit)
+- `pkg/agentprotocol/types.go` — `DeferReload bool` added to `TaskEnvelope`
+- `store/postgres/host_group.go` — `HostGroupStore` with `GetByID`, `List`,
+  `ListByProject`, `UpdateConcurrency`, `CountInFlight`
+- `store/postgres/agent.go` — `NextPendingTask` checks host_group
+  `max_concurrency`; returns nil when host_group is at capacity
+- `internal/release/dispatcher.go` — `applyReloadBatching()`: groups tasks
+  by agent, sets `DeferReload=true` on all but the last task per agent
+  (respects `reload_batch_size` for intermediate batches)
+- `internal/release/service.go` — `DispatchShard()` builds `dispatchItem`
+  list, fetches host_group settings, calls `applyReloadBatching()` before
+  persisting agent_tasks; `NewService` accepts `*HostGroupStore`
+- `api/handler/host_group.go` — `GET /host-groups`, `GET /host-groups/:id`,
+  `PUT /host-groups/:id` (update concurrency settings)
+- `api/router/router.go` — registers host-groups routes
+- `cmd/server/main.go` + `cmd/worker/main.go` — wired `HostGroupStore`
+- `cmd/agent/handler.go` — phase 8 reload condition now
+  `AllowReload && !DeferReload`; deferred reload reported as "skipped
+  (batch reload pending)"
+- `web/src/` — types, API client, Pinia store, `HostGroupList.vue` page,
+  router route, sidebar entry
 
 ---
 

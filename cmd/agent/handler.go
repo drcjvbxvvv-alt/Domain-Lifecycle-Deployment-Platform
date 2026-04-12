@@ -127,7 +127,9 @@ func handleTask(ctx context.Context, client *http.Client, env *agentprotocol.Tas
 	phases = append(phases, agentprotocol.PhaseReport{Phase: "swap", Status: "succeeded", Detail: "inline with write phase"})
 
 	// Phase 8: nginx reload
-	if hasNginx && env.AllowReload {
+	// Skipped when DeferReload=true (more tasks remain in this reload batch for
+	// this host; the final task in the batch will trigger a single reload).
+	if hasNginx && env.AllowReload && !env.DeferReload {
 		phase = runPhase("reload", func() error {
 			return runNginxReload()
 		})
@@ -136,7 +138,11 @@ func handleTask(ctx context.Context, client *http.Client, env *agentprotocol.Tas
 			return failReport(report, phases, start, phase.Detail)
 		}
 	} else {
-		phases = append(phases, agentprotocol.PhaseReport{Phase: "reload", Status: "skipped"})
+		detail := "skipped"
+		if hasNginx && env.AllowReload && env.DeferReload {
+			detail = "deferred (batch reload pending)"
+		}
+		phases = append(phases, agentprotocol.PhaseReport{Phase: "reload", Status: "skipped", Detail: detail})
 	}
 
 	// Phase 9: Local verify

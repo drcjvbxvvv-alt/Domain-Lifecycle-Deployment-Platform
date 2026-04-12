@@ -117,6 +117,12 @@ const router = createRouter({
           component: () => import('@/views/agents/AgentDetail.vue'),
           meta: { title: 'Agent 詳情', minRole: 'viewer' },
         },
+        {
+          path: 'host-groups',
+          name: 'HostGroupList',
+          component: () => import('@/views/agents/HostGroupList.vue'),
+          meta: { title: 'Host Group 管理', minRole: 'viewer' },
+        },
 
         // ── Settings ──────────────────────────────────────────
         {

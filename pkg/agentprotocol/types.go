@@ -78,8 +78,13 @@ type TaskEnvelope struct {
 	Domains     []string     `json:"domains"`
 	DeployPath  string       `json:"deploy_path"`  // e.g., /var/www
 	NginxPath   string       `json:"nginx_path"`    // e.g., /etc/nginx/conf.d
-	AllowReload      bool         `json:"allow_reload"`       // whether nginx reload is permitted
-	Verify           VerifyConfig `json:"verify"`
+	AllowReload bool         `json:"allow_reload"` // whether nginx reload is permitted at all
+	// DeferReload is set by the dispatcher when this is NOT the last task in a
+	// reload batch for this agent. The agent writes files but skips the reload
+	// phase; the final task in the batch (DeferReload=false) triggers a single reload.
+	// This implements Critical Rule #7 (batch nginx reloads per host).
+	DeferReload bool         `json:"defer_reload,omitempty"`
+	Verify      VerifyConfig `json:"verify"`
 	// TargetReleaseID is only used for TaskTypeRollback.
 	// It identifies which release's local snapshot to restore from.
 	// The snapshot lives at {DeployPath}/.previous/{TargetReleaseID}/.

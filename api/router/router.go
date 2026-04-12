@@ -10,14 +10,15 @@ import (
 
 // Deps bundles all dependencies needed to register routes.
 type Deps struct {
-	AuthHandler     *handler.AuthHandler
-	ProjectHandler  *handler.ProjectHandler
-	DomainHandler   *handler.DomainHandler
-	TemplateHandler *handler.TemplateHandler
-	ArtifactHandler *handler.ArtifactHandler
-	ReleaseHandler  *handler.ReleaseHandler
-	AgentHandler    *handler.AgentHandler
-	JWTManager      *auth.JWTManager
+	AuthHandler      *handler.AuthHandler
+	ProjectHandler   *handler.ProjectHandler
+	DomainHandler    *handler.DomainHandler
+	TemplateHandler  *handler.TemplateHandler
+	ArtifactHandler  *handler.ArtifactHandler
+	ReleaseHandler   *handler.ReleaseHandler
+	AgentHandler     *handler.AgentHandler
+	HostGroupHandler *handler.HostGroupHandler
+	JWTManager       *auth.JWTManager
 }
 
 // RegisterV1 mounts all /api/v1 routes onto the Gin engine.
@@ -105,6 +106,14 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			agents.GET("/:id", middleware.RequireAnyRole("operator", "release_manager", "admin", "auditor"), deps.AgentHandler.Get)
 			agents.POST("/:id/transition", middleware.RequireAnyRole("admin"), deps.AgentHandler.Transition)
 			agents.GET("/:id/history", middleware.RequireAnyRole("operator", "release_manager", "admin", "auditor"), deps.AgentHandler.History)
+		}
+
+		// ── Host Groups (concurrency + reload-batch settings) ─────────
+		hostGroups := authed.Group("/host-groups")
+		{
+			hostGroups.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.HostGroupHandler.List)
+			hostGroups.GET("/:id", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.HostGroupHandler.Get)
+			hostGroups.PUT("/:id", middleware.RequireAnyRole("admin"), deps.HostGroupHandler.UpdateConcurrency)
 		}
 	}
 }
