@@ -67,9 +67,6 @@ function onUserAction(key: string) {
   }
 }
 
-// Page title from route meta with fallback
-const pageTitle = computed(() => (route.meta?.title as string | undefined) ?? '域名生命週期管理平台')
-
 // SVG icon helper — returns inline SVG string for nav icons
 function getIconSvg(name: string): string {
   const icons: Record<string, string> = {
@@ -166,11 +163,8 @@ function getIconSvg(name: string): string {
 
     <!-- ─── Main content area ───────────────────────────────────────────── -->
     <NLayout>
-      <!-- Top header -->
+      <!-- Top header: chrome only — notifications + user. Page title lives in PageHeader. -->
       <div class="main-header">
-        <div class="header-breadcrumb">
-          <span class="header-title">{{ pageTitle }}</span>
-        </div>
         <div class="header-right">
           <!-- Notification bell (placeholder) -->
           <button class="header-icon-btn" title="通知">
@@ -360,21 +354,12 @@ function getIconSvg(name: string): string {
   height: var(--header-height);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 0 24px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
   box-shadow: var(--shadow-sm);
   flex-shrink: 0;
-}
-.header-breadcrumb {
-  display: flex;
-  align-items: center;
-}
-.header-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
 }
 .header-right {
   display: flex;
