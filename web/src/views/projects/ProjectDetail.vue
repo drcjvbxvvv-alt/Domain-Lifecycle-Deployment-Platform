@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NTabs, NTabPane, NButton, NDescriptions, NDescriptionsItem, NSpin } from 'naive-ui'
+import { NTabs, NTabPane, NButton, NDescriptions, NDescriptionsItem } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import AppTable from '@/components/AppTable.vue'
-import PageHeader from '@/components/PageHeader.vue'
-import StatusTag from '@/components/StatusTag.vue'
+import { AppTable, PageHeader, StatusTag } from '@/components'
 import { useProjectStore } from '@/stores/project'
 import { useDomainStore } from '@/stores/domain'
 import { useReleaseStore } from '@/stores/release'
@@ -74,34 +72,67 @@ onMounted(async () => {
 </script>
 
 <template>
-  <NSpin :show="projectStore.loading">
+  <div class="detail-page">
     <PageHeader
-      :title="projectStore.current?.name ?? ''"
+      :title="projectStore.current?.name ?? '載入中...'"
       :subtitle="`slug: ${projectStore.current?.slug ?? ''}`"
     />
 
-    <NDescriptions v-if="projectStore.current" bordered :column="3" style="margin-top: 16px;">
-      <NDescriptionsItem label="UUID">{{ projectStore.current.uuid }}</NDescriptionsItem>
-      <NDescriptionsItem label="Slug">{{ projectStore.current.slug }}</NDescriptionsItem>
-      <NDescriptionsItem label="建立時間">
-        {{ new Date(projectStore.current.created_at).toLocaleString('zh-TW') }}
-      </NDescriptionsItem>
-      <NDescriptionsItem label="說明" :span="3">{{ projectStore.current.description || '-' }}</NDescriptionsItem>
-    </NDescriptions>
+    <div v-if="projectStore.current" class="detail-page__body">
+      <div class="detail-page__sidebar">
+        <NDescriptions bordered :column="1" label-placement="left">
+          <NDescriptionsItem label="UUID">{{ projectStore.current.uuid }}</NDescriptionsItem>
+          <NDescriptionsItem label="Slug">{{ projectStore.current.slug }}</NDescriptionsItem>
+          <NDescriptionsItem label="建立時間">
+            {{ new Date(projectStore.current.created_at).toLocaleString('zh-TW') }}
+          </NDescriptionsItem>
+          <NDescriptionsItem label="說明">{{ projectStore.current.description || '-' }}</NDescriptionsItem>
+        </NDescriptions>
+      </div>
 
-    <NTabs style="margin-top: 24px;" type="line" animated>
-      <NTabPane name="domains" :tab="`域名 (${domainStore.total})`">
-        <AppTable :columns="domainCols" :data="domainStore.domains" :loading="domainStore.loading"
-          :row-key="(r) => r.uuid" />
-      </NTabPane>
-      <NTabPane name="templates" :tab="`範本 (${templateStore.total})`">
-        <AppTable :columns="templateCols" :data="templateStore.templates" :loading="templateStore.loading"
-          :row-key="(r) => String(r.id)" />
-      </NTabPane>
-      <NTabPane name="releases" :tab="`發布 (${releaseStore.total})`">
-        <AppTable :columns="releaseCols" :data="releaseStore.releases" :loading="releaseStore.loading"
-          :row-key="(r) => r.uuid" />
-      </NTabPane>
-    </NTabs>
-  </NSpin>
+      <div class="detail-page__main">
+        <NTabs type="line" animated>
+          <NTabPane name="domains" :tab="`域名 (${domainStore.total})`">
+            <AppTable :columns="domainCols" :data="domainStore.domains" :loading="domainStore.loading"
+              :row-key="(r) => r.uuid" />
+          </NTabPane>
+          <NTabPane name="templates" :tab="`範本 (${templateStore.total})`">
+            <AppTable :columns="templateCols" :data="templateStore.templates" :loading="templateStore.loading"
+              :row-key="(r) => String(r.id)" />
+          </NTabPane>
+          <NTabPane name="releases" :tab="`發布 (${releaseStore.total})`">
+            <AppTable :columns="releaseCols" :data="releaseStore.releases" :loading="releaseStore.loading"
+              :row-key="(r) => r.uuid" />
+          </NTabPane>
+        </NTabs>
+      </div>
+    </div>
+  </div>
 </template>
+
+<style scoped>
+.detail-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.detail-page__body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+.detail-page__sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+.detail-page__main {
+  flex: 1;
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+</style>

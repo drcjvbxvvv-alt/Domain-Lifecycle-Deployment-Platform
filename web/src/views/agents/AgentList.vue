@@ -3,9 +3,7 @@ import { onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import type { DataTableColumns } from 'naive-ui'
 import { NButton } from 'naive-ui'
-import AppTable from '@/components/AppTable.vue'
-import PageHeader from '@/components/PageHeader.vue'
-import StatusTag from '@/components/StatusTag.vue'
+import { AppTable, PageHeader, StatusTag } from '@/components'
 import { useAgentStore } from '@/stores/agent'
 import type { AgentResponse } from '@/types/agent'
 
@@ -38,9 +36,22 @@ onMounted(() => store.fetchList())
 </script>
 
 <template>
-  <div>
+  <div class="list-page">
     <PageHeader title="Agent 管理" subtitle="所有 Nginx 節點" />
-    <AppTable :columns="columns" :data="store.agents" :loading="store.loading"
-      :row-key="(r) => String(r.id)" style="margin-top: 16px;" />
+    <AppTable
+      :columns="columns"
+      :data="store.agents"
+      :loading="store.loading"
+      :row-key="(r) => String(r.id)"
+    />
   </div>
 </template>
+
+<style scoped>
+.list-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+</style>

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { projectApi } from '@/api/project'
 import type { ProjectResponse } from '@/types/project'
+import type { ApiResponse, PaginatedData } from '@/types/common'
 
 export const useProjectStore = defineStore('project', () => {
   const projects = ref<ProjectResponse[]>([])
@@ -12,9 +13,9 @@ export const useProjectStore = defineStore('project', () => {
   async function fetchList() {
     loading.value = true
     try {
-      const res = await projectApi.list() as any
-      projects.value = res.data?.items ?? res.items ?? []
-      total.value    = res.data?.total ?? res.total ?? 0
+      const res = await projectApi.list() as unknown as ApiResponse<PaginatedData<ProjectResponse>>
+      projects.value = res.data?.items ?? []
+      total.value    = res.data?.total ?? 0
     } finally {
       loading.value = false
     }
@@ -23,8 +24,8 @@ export const useProjectStore = defineStore('project', () => {
   async function fetchOne(id: string) {
     loading.value = true
     try {
-      const res = await projectApi.get(id) as any
-      current.value = res.data ?? res
+      const res = await projectApi.get(id) as unknown as ApiResponse<ProjectResponse>
+      current.value = res.data
     } finally {
       loading.value = false
     }

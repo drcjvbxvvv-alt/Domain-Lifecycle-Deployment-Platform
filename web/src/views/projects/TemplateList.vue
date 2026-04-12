@@ -3,8 +3,7 @@ import { onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { DataTableColumns } from 'naive-ui'
 import { NButton } from 'naive-ui'
-import AppTable from '@/components/AppTable.vue'
-import PageHeader from '@/components/PageHeader.vue'
+import { AppTable, PageHeader } from '@/components'
 import { useTemplateStore } from '@/stores/template'
 import type { TemplateResponse } from '@/types/template'
 
@@ -29,9 +28,22 @@ onMounted(() => store.fetchByProject(pid))
 </script>
 
 <template>
-  <div>
+  <div class="list-page">
     <PageHeader title="範本管理" />
-    <AppTable :columns="columns" :data="store.templates" :loading="store.loading"
-      :row-key="(r) => String(r.id)" style="margin-top: 16px;" />
+    <AppTable
+      :columns="columns"
+      :data="store.templates"
+      :loading="store.loading"
+      :row-key="(r) => String(r.id)"
+    />
   </div>
 </template>
+
+<style scoped>
+.list-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+</style>

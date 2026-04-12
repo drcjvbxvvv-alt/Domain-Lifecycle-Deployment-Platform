@@ -3,8 +3,7 @@ import { onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import type { DataTableColumns } from 'naive-ui'
 import { NButton } from 'naive-ui'
-import AppTable from '@/components/AppTable.vue'
-import PageHeader from '@/components/PageHeader.vue'
+import { AppTable, PageHeader } from '@/components'
 import { useProjectStore } from '@/stores/project'
 import type { ProjectResponse } from '@/types/project'
 
@@ -30,14 +29,22 @@ onMounted(() => store.fetchList())
 </script>
 
 <template>
-  <div>
+  <div class="list-page">
     <PageHeader title="專案管理" subtitle="管理所有專案" />
     <AppTable
       :columns="columns"
       :data="store.projects"
       :loading="store.loading"
       :row-key="(r) => r.uuid"
-      style="margin-top: 16px;"
     />
   </div>
 </template>
+
+<style scoped>
+.list-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+</style>

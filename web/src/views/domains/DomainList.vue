@@ -3,9 +3,7 @@ import { onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { DataTableColumns } from 'naive-ui'
 import { NButton } from 'naive-ui'
-import AppTable from '@/components/AppTable.vue'
-import PageHeader from '@/components/PageHeader.vue'
-import StatusTag from '@/components/StatusTag.vue'
+import { AppTable, PageHeader, StatusTag } from '@/components'
 import { useDomainStore } from '@/stores/domain'
 import type { DomainResponse } from '@/types/domain'
 
@@ -35,9 +33,22 @@ onMounted(() => store.fetchList(projectId ? { project_id: Number(projectId) } : 
 </script>
 
 <template>
-  <div>
+  <div class="list-page">
     <PageHeader title="域名管理" :subtitle="projectId ? `專案 #${projectId}` : '所有域名'" />
-    <AppTable :columns="columns" :data="store.domains" :loading="store.loading"
-      :row-key="(r) => r.uuid" style="margin-top: 16px;" />
+    <AppTable
+      :columns="columns"
+      :data="store.domains"
+      :loading="store.loading"
+      :row-key="(r) => r.uuid"
+    />
   </div>
 </template>
+
+<style scoped>
+.list-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+</style>

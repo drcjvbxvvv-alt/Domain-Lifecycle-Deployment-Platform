@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { NGrid, NGridItem, NStatistic, NCard } from 'naive-ui'
-import PageHeader from '@/components/PageHeader.vue'
+import { PageHeader, StatCard } from '@/components'
 import { useProjectStore } from '@/stores/project'
 import { useDomainStore } from '@/stores/domain'
 import { useAgentStore } from '@/stores/agent'
@@ -22,30 +21,29 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div>
+  <div class="dashboard">
     <PageHeader title="Dashboard" subtitle="平台概覽" />
 
-    <NGrid :cols="4" :x-gap="16" :y-gap="16" style="margin-top: 24px;">
-      <NGridItem>
-        <NCard>
-          <NStatistic label="專案數" :value="projectStore.projects.length" />
-        </NCard>
-      </NGridItem>
-      <NGridItem>
-        <NCard>
-          <NStatistic label="域名數" :value="domainStore.total" />
-        </NCard>
-      </NGridItem>
-      <NGridItem>
-        <NCard>
-          <NStatistic label="Agent 數" :value="agentStore.total" />
-        </NCard>
-      </NGridItem>
-      <NGridItem>
-        <NCard>
-          <NStatistic label="發布數" :value="releaseStore.total" />
-        </NCard>
-      </NGridItem>
-    </NGrid>
+    <div class="dashboard__stats">
+      <StatCard label="專案數"  :value="projectStore.projects.length" color="#38bdf8" />
+      <StatCard label="域名數"  :value="domainStore.total"            color="#4ade80" />
+      <StatCard label="Agent 數" :value="agentStore.total"            color="#38bdf8" />
+      <StatCard label="發布數"  :value="releaseStore.total"           color="#fbbf24" />
+    </div>
   </div>
 </template>
+
+<style scoped>
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+.dashboard__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-6) var(--content-padding);
+}
+</style>

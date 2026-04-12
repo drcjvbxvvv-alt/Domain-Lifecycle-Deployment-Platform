@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { templateApi } from '@/api/template'
 import type { TemplateResponse, TemplateVersionResponse } from '@/types/template'
+import type { ApiResponse, PaginatedData } from '@/types/common'
 
 export const useTemplateStore = defineStore('template', () => {
   const templates = ref<TemplateResponse[]>([])
@@ -13,9 +14,9 @@ export const useTemplateStore = defineStore('template', () => {
   async function fetchByProject(projectId: number | string) {
     loading.value = true
     try {
-      const res = await templateApi.listByProject(projectId) as any
-      templates.value = res.data?.items ?? res.items ?? []
-      total.value     = res.data?.total ?? res.total ?? 0
+      const res = await templateApi.listByProject(projectId) as unknown as ApiResponse<PaginatedData<TemplateResponse>>
+      templates.value = res.data?.items ?? []
+      total.value     = res.data?.total ?? 0
     } finally {
       loading.value = false
     }
@@ -24,16 +25,16 @@ export const useTemplateStore = defineStore('template', () => {
   async function fetchOne(id: number | string) {
     loading.value = true
     try {
-      const res = await templateApi.get(id) as any
-      current.value = res.data ?? res
+      const res = await templateApi.get(id) as unknown as ApiResponse<TemplateResponse>
+      current.value = res.data
     } finally {
       loading.value = false
     }
   }
 
   async function fetchVersions(id: number | string) {
-    const res = await templateApi.listVersions(id) as any
-    versions.value = res.data?.items ?? res.items ?? []
+    const res = await templateApi.listVersions(id) as unknown as ApiResponse<{ items: TemplateVersionResponse[] }>
+    versions.value = res.data?.items ?? []
   }
 
   return { templates, total, loading, current, versions, fetchByProject, fetchOne, fetchVersions }

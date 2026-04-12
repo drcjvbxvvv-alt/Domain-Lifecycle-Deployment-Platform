@@ -2,11 +2,10 @@
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  NTabs, NTabPane, NDescriptions, NDescriptionsItem, NSpin,
+  NTabs, NTabPane, NDescriptions, NDescriptionsItem,
   NAlert, NTimeline, NTimelineItem,
 } from 'naive-ui'
-import PageHeader from '@/components/PageHeader.vue'
-import StatusTag from '@/components/StatusTag.vue'
+import { PageHeader, StatusTag } from '@/components'
 import { useAgentStore } from '@/stores/agent'
 
 const route = useRoute()
@@ -20,51 +19,90 @@ onMounted(async () => {
 </script>
 
 <template>
-  <NSpin :show="store.loading">
+  <div class="detail-page">
     <PageHeader
-      :title="store.current?.hostname ?? ''"
+      :title="store.current?.hostname ?? '載入中...'"
       :subtitle="store.current?.agent_id ?? 'Agent 詳情'"
     />
 
-    <NAlert
-      v-if="store.current?.last_error"
-      type="error"
-      :title="store.current.last_error"
-      style="margin-top: 16px;"
-    />
+    <div v-if="store.current" class="detail-page__body">
+      <div class="detail-page__sidebar">
+        <NAlert
+          v-if="store.current.last_error"
+          type="error"
+          :title="store.current.last_error"
+          class="error-alert"
+        />
 
-    <NDescriptions v-if="store.current" bordered :column="3" style="margin-top: 16px;">
-      <NDescriptionsItem label="Agent ID">{{ store.current.agent_id }}</NDescriptionsItem>
-      <NDescriptionsItem label="狀態">
-        <StatusTag :status="store.current.status" />
-      </NDescriptionsItem>
-      <NDescriptionsItem label="版本">{{ store.current.agent_version ?? '-' }}</NDescriptionsItem>
-      <NDescriptionsItem label="Hostname">{{ store.current.hostname }}</NDescriptionsItem>
-      <NDescriptionsItem label="IP">{{ store.current.ip ?? '-' }}</NDescriptionsItem>
-      <NDescriptionsItem label="Region">{{ store.current.region ?? '-' }}</NDescriptionsItem>
-      <NDescriptionsItem label="Datacenter">{{ store.current.datacenter ?? '-' }}</NDescriptionsItem>
-      <NDescriptionsItem label="最後心跳">
-        {{ store.current.last_seen_at
-          ? new Date(store.current.last_seen_at).toLocaleString('zh-TW')
-          : '-' }}
-      </NDescriptionsItem>
-      <NDescriptionsItem label="建立時間">
-        {{ new Date(store.current.created_at).toLocaleString('zh-TW') }}
-      </NDescriptionsItem>
-    </NDescriptions>
+        <NDescriptions bordered :column="1" label-placement="left">
+          <NDescriptionsItem label="Agent ID">{{ store.current.agent_id }}</NDescriptionsItem>
+          <NDescriptionsItem label="狀態">
+            <StatusTag :status="store.current.status" />
+          </NDescriptionsItem>
+          <NDescriptionsItem label="版本">{{ store.current.agent_version ?? '-' }}</NDescriptionsItem>
+          <NDescriptionsItem label="Hostname">{{ store.current.hostname }}</NDescriptionsItem>
+          <NDescriptionsItem label="IP">{{ store.current.ip ?? '-' }}</NDescriptionsItem>
+          <NDescriptionsItem label="Region">{{ store.current.region ?? '-' }}</NDescriptionsItem>
+          <NDescriptionsItem label="Datacenter">{{ store.current.datacenter ?? '-' }}</NDescriptionsItem>
+          <NDescriptionsItem label="最後心跳">
+            {{ store.current.last_seen_at
+              ? new Date(store.current.last_seen_at).toLocaleString('zh-TW')
+              : '-' }}
+          </NDescriptionsItem>
+          <NDescriptionsItem label="建立時間">
+            {{ new Date(store.current.created_at).toLocaleString('zh-TW') }}
+          </NDescriptionsItem>
+        </NDescriptions>
+      </div>
 
-    <NTabs style="margin-top: 24px;" type="line" animated>
-      <NTabPane name="history" :tab="`狀態歷史 (${store.history.length})`">
-        <NTimeline style="margin-top: 16px; padding-left: 16px;">
-          <NTimelineItem
-            v-for="entry in store.history"
-            :key="entry.id"
-            :title="`${entry.from_state ?? '—'} → ${entry.to_state}`"
-            :time="new Date(entry.created_at).toLocaleString('zh-TW')"
-            :content="entry.reason || undefined"
-          />
-        </NTimeline>
-      </NTabPane>
-    </NTabs>
-  </NSpin>
+      <div class="detail-page__main">
+        <NTabs type="line" animated>
+          <NTabPane name="history" :tab="`狀態歷史 (${store.history.length})`">
+            <NTimeline class="history-timeline">
+              <NTimelineItem
+                v-for="entry in store.history"
+                :key="entry.id"
+                :title="`${entry.from_state ?? '—'} → ${entry.to_state}`"
+                :time="new Date(entry.created_at).toLocaleString('zh-TW')"
+                :content="entry.reason || undefined"
+              />
+            </NTimeline>
+          </NTabPane>
+        </NTabs>
+      </div>
+    </div>
+  </div>
 </template>
+
+<style scoped>
+.detail-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.detail-page__body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+.detail-page__sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+.detail-page__main {
+  flex: 1;
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+.error-alert {
+  margin-bottom: var(--space-4);
+}
+.history-timeline {
+  padding-left: var(--space-4);
+}
+</style>
