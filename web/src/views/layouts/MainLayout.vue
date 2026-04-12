@@ -94,15 +94,8 @@ function getIconSvg(name: string): string {
       style="background: var(--bg-sidebar); border-right: 1px solid var(--sidebar-border);"
     >
       <!-- Logo / Brand -->
-      <div class="sidebar-logo" :class="{ 'sidebar-logo--collapsed': collapsed }">
-        <div class="sidebar-logo__icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4f7ef8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="2" y1="12" x2="22" y2="12"/>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-          </svg>
-        </div>
-        <span v-if="!collapsed" class="sidebar-logo__text">域名平台</span>
+      <div class="sidebar-logo">
+        <img src="/logo.svg" class="sidebar-logo__img" alt="域名平台" />
       </div>
 
       <!-- Collapse toggle -->
@@ -200,21 +193,14 @@ function getIconSvg(name: string): string {
   height: 56px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--sidebar-border);
-  white-space: nowrap;
-  overflow: hidden;
-}
-.sidebar-logo--collapsed {
   justify-content: center;
-  padding: 0;
+  border-bottom: 1px solid var(--sidebar-border);
 }
-.sidebar-logo__text {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--sidebar-text-active);
-  letter-spacing: 0.5px;
+.sidebar-logo__img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: block;
 }
 
 /* ── Sidebar Collapse Button ──────────────────────────────────────────── */
