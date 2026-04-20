@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, h } from 'vue'
 import { useRouter } from 'vue-router'
-import type { DataTableColumns } from 'naive-ui'
+import type { DataTableColumns, SelectOption, VNodeChild } from 'naive-ui'
 import { NButton, NSpace, NSelect, useMessage } from 'naive-ui'
 import { AppTable, PageHeader, StatusTag, PageHint } from '@/components'
 import { useAgentStore } from '@/stores/agent'
@@ -14,8 +14,7 @@ const message = useMessage()
 const statusFilter = ref<string | null>(null)
 const actionLoading = ref<number | null>(null)
 
-const statusOptions = [
-  { label: '全部', value: null },
+const statusOptions: SelectOption[] = [
   { label: 'online',    value: 'online'    },
   { label: 'busy',      value: 'busy'      },
   { label: 'idle',      value: 'idle'      },
@@ -61,7 +60,7 @@ const columns: DataTableColumns<AgentResponse> = [
   { title: '操作', key: 'actions', width: 220, fixed: 'right',
     render: (row) => {
       const loading = actionLoading.value === row.id
-      const btns = []
+      const btns: VNodeChild[] = []
 
       if (['online', 'busy', 'idle'].includes(row.status)) {
         btns.push(h(NButton, {
