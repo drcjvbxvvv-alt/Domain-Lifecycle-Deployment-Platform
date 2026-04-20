@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, h } from 'vue'
 import { useRouter } from 'vue-router'
-import type { DataTableColumns, SelectOption, VNodeChild } from 'naive-ui'
+import type { DataTableColumns, SelectOption } from 'naive-ui'
+import type { VNodeChild } from 'vue'
 import { NButton, NSpace, NSelect, useMessage } from 'naive-ui'
 import { AppTable, PageHeader, StatusTag, PageHint } from '@/components'
 import { useAgentStore } from '@/stores/agent'
