@@ -27,6 +27,7 @@ import (
 	"domain-platform/internal/registrar"
 	"domain-platform/internal/release"
 	sslsvc "domain-platform/internal/ssl"
+	tagsvc "domain-platform/internal/tag"
 	tmplsvc "domain-platform/internal/template"
 	pkgstorage "domain-platform/pkg/storage"
 	"domain-platform/store/postgres"
@@ -118,6 +119,10 @@ func main() {
 	costSvc := costsvc.NewService(costStore, domainStore, registrarStore, logger)
 	costHandler := handler.NewCostHandler(costSvc, logger)
 
+	tagStore := postgres.NewTagStore(db)
+	tagSvc := tagsvc.NewService(tagStore, domainStore, logger)
+	tagHandler := handler.NewTagHandler(tagSvc, logger)
+
 	// ── Management API listener (:8080, JWT auth) ──────────────────────────
 	mgmtRouter := buildManagementRouter(logger, router.Deps{
 		AuthHandler:        authHandler,
@@ -132,6 +137,7 @@ func main() {
 		DNSProviderHandler: dnsProviderHandler,
 		SSLHandler:         sslHandler,
 		CostHandler:        costHandler,
+		TagHandler:         tagHandler,
 		JWTManager:         jwtMgr,
 	})
 	mgmtAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

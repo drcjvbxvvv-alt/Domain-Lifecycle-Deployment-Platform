@@ -195,6 +195,7 @@ type ListInput struct {
 	TLD            *string
 	ExpiryStatus   *string
 	LifecycleState *string
+	TagID          *int64
 	Cursor         int64
 	Limit          int
 }
@@ -213,6 +214,7 @@ func (s *Service) List(ctx context.Context, in ListInput) (*ListResult, error) {
 		TLD:            in.TLD,
 		ExpiryStatus:   in.ExpiryStatus,
 		LifecycleState: in.LifecycleState,
+		TagID:          in.TagID,
 		Cursor:         in.Cursor,
 		Limit:          in.Limit,
 	}

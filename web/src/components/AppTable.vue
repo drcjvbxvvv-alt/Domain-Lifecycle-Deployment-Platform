@@ -1,8 +1,10 @@
 <script setup lang="ts" generic="T extends Record<string, unknown>">
-import { computed } from 'vue'
+import { computed, useAttrs } from 'vue'
 import { NDataTable, NPagination } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import EmptyState from './EmptyState.vue'
+
+const attrs = useAttrs()
 
 // NOTE for column definitions:
 //   UUIDs, checksums, release IDs, agent IDs → add class="mono" to the cell renderer
@@ -58,6 +60,7 @@ const isEmpty = computed(() => !props.loading && props.data.length === 0)
       :bordered="false"
       size="small"
       class="app-table__inner"
+      v-bind="attrs"
     />
 
     <EmptyState v-else-if="isEmpty" />

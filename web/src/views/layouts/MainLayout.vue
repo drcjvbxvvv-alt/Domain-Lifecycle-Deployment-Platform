@@ -51,6 +51,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: '使用者管理', key: '/settings/users',        icon: 'users'    },
       { label: '費率表管理', key: '/settings/fee-schedules', icon: 'currency' },
+      { label: '標籤管理',   key: '/settings/tags',          icon: 'tag'      },
     ],
   },
 ]

@@ -320,6 +320,11 @@ func (h *DomainHandler) List(c *gin.Context) {
 	if v := c.Query("lifecycle_state"); v != "" {
 		in.LifecycleState = &v
 	}
+	if v := c.Query("tag_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			in.TagID = &id
+		}
+	}
 
 	in.Cursor, _ = strconv.ParseInt(c.DefaultQuery("cursor", "0"), 10, 64)
 	in.Limit, _ = strconv.Atoi(c.DefaultQuery("limit", "20"))

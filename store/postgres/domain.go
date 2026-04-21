@@ -275,6 +275,68 @@ func (s *DomainStore) UpdateAnnualCost(ctx context.Context, domainID int64, cost
 	return nil
 }
 
+// BulkUpdateFields updates specific fields for a set of domain IDs in one statement.
+// Only non-nil fields are applied. Returns the number of rows affected.
+func (s *DomainStore) BulkUpdateFields(ctx context.Context, ids []int64, registrarAccountID, dnsProviderID *int64, autoRenew *bool) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	setClauses := []string{"updated_at = NOW()"}
+	args := []any{}
+	n := 1
+
+	if registrarAccountID != nil {
+		setClauses = append(setClauses, fmt.Sprintf("registrar_account_id = $%d", n))
+		args = append(args, *registrarAccountID)
+		n++
+	}
+	if dnsProviderID != nil {
+		setClauses = append(setClauses, fmt.Sprintf("dns_provider_id = $%d", n))
+		args = append(args, *dnsProviderID)
+		n++
+	}
+	if autoRenew != nil {
+		setClauses = append(setClauses, fmt.Sprintf("auto_renew = $%d", n))
+		args = append(args, *autoRenew)
+		n++
+	}
+	if len(args) == 0 {
+		return 0, nil // nothing to update
+	}
+
+	// Build IN clause for IDs
+	idPlaceholders := ""
+	for i, id := range ids {
+		if i > 0 {
+			idPlaceholders += ","
+		}
+		idPlaceholders += fmt.Sprintf("$%d", n)
+		args = append(args, id)
+		n++
+	}
+
+	q := fmt.Sprintf("UPDATE domains SET %s WHERE id IN (%s) AND deleted_at IS NULL",
+		joinStrings(setClauses, ", "), idPlaceholders)
+
+	result, err := s.db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return 0, fmt.Errorf("bulk update domains: %w", err)
+	}
+	affected, _ := result.RowsAffected()
+	return affected, nil
+}
+
+func joinStrings(ss []string, sep string) string {
+	out := ""
+	for i, s := range ss {
+		if i > 0 {
+			out += sep
+		}
+		out += s
+	}
+	return out
+}
+
 // ListFilter holds optional filters for querying domains.
 type ListFilter struct {
 	ProjectID      *int64
@@ -283,6 +345,7 @@ type ListFilter struct {
 	TLD            *string
 	ExpiryStatus   *string
 	LifecycleState *string
+	TagID          *int64 // matches via domain_tags join
 	Cursor         int64
 	Limit          int
 }
@@ -330,6 +393,11 @@ func (s *DomainStore) ListWithFilter(ctx context.Context, f ListFilter) ([]Domai
 		args = append(args, *f.LifecycleState)
 		n++
 	}
+	if f.TagID != nil {
+		q += fmt.Sprintf(` AND d.id IN (SELECT domain_id FROM domain_tags WHERE tag_id = $%d)`, n)
+		args = append(args, *f.TagID)
+		n++
+	}
 
 	q += fmt.Sprintf(` ORDER BY d.id ASC LIMIT $%d`, n)
 	args = append(args, f.Limit)
@@ -375,6 +443,11 @@ func (s *DomainStore) CountWithFilter(ctx context.Context, f ListFilter) (int64,
 	if f.LifecycleState != nil {
 		q += fmt.Sprintf(` AND d.lifecycle_state = $%d`, n)
 		args = append(args, *f.LifecycleState)
+		n++
+	}
+	if f.TagID != nil {
+		q += fmt.Sprintf(` AND d.id IN (SELECT domain_id FROM domain_tags WHERE tag_id = $%d)`, n)
+		args = append(args, *f.TagID)
 		n++
 	}
 

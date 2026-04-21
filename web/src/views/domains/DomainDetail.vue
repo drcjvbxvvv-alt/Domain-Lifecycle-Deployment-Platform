@@ -16,6 +16,7 @@ import { useRegistrarStore } from '@/stores/registrar'
 import { useDNSProviderStore } from '@/stores/dnsprovider'
 import { useSSLStore } from '@/stores/ssl'
 import { useCostStore } from '@/stores/cost'
+import { useTagStore } from '@/stores/tag'
 import { domainApi } from '@/api/domain'
 import type { DomainLifecycleHistoryEntry, UpdateDomainAssetRequest } from '@/types/domain'
 import type { SSLCertResponse } from '@/types/ssl'
@@ -29,6 +30,7 @@ const regStore = useRegistrarStore()
 const dnsStore = useDNSProviderStore()
 const sslStore  = useSSLStore()
 const costStore = useCostStore()
+const tagStore  = useTagStore()
 const message   = useMessage()
 
 // domain ID from route (numeric)
@@ -324,7 +326,20 @@ async function handleSSLDelete(id: number) {
   }
 }
 
-// ── Cost ──────────────────────────────────────────────────────────────────────
+// ── Tags ──────────────────────────────────────────────────────────────────────
+const domainTagIds = computed(() => tagStore.domainTags.map(t => t.id))
+const allTagOptions = computed(() => tagStore.tags.map(t => ({ label: t.name, value: t.id })))
+
+async function handleTagChange(ids: number[]) {
+  try {
+    await tagStore.setDomainTags(domainId, ids)
+    message.success('標籤已更新')
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || '更新失敗')
+  }
+}
+
+// ── Cost ────────────────���─────────────────────────────────────────────────────
 const showCostCreate = ref(false)
 const costCreating   = ref(false)
 const costForm       = ref<{ cost_type: CostType; amount: number; currency: string; paid_at: string; notes: string }>({
@@ -397,6 +412,8 @@ onMounted(async () => {
     dnsStore.fetchList(),
     sslStore.fetchList(domainId),
     costStore.fetchDomainCosts(domainId),
+    tagStore.fetchList(),
+    tagStore.fetchDomainTags(domainId),
   ])
 })
 </script>
@@ -457,10 +474,20 @@ onMounted(async () => {
           <NDescriptionsItem label="到期日">{{ fmtDate(store.current.expiry_date) }}</NDescriptionsItem>
           <NDescriptionsItem label="自動續約">{{ store.current.auto_renew ? '是' : '否' }}</NDescriptionsItem>
           <NDescriptionsItem label="到期狀態">{{ store.current.expiry_status ?? '-' }}</NDescriptionsItem>
-          <NDescriptionsItem label="建立時間">
+          <NDescriptionsItem label="建���時間">
             {{ new Date(store.current.created_at).toLocaleString('zh-TW') }}
           </NDescriptionsItem>
         </NDescriptions>
+
+        <div class="section-title" style="margin-top:16px">標��</div>
+        <NSelect
+          :value="domainTagIds"
+          :options="allTagOptions"
+          multiple
+          placeholder="選擇標籤"
+          clearable
+          @update:value="handleTagChange"
+        />
       </div>
 
       <!-- Main: tabs -->

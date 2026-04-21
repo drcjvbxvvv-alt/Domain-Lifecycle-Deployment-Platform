@@ -17,6 +17,7 @@ export type DomainListParams = {
   tld?:             string
   expiry_status?:   string
   lifecycle_state?: string
+  tag_id?:          number
   cursor?:          number
   limit?:           number
 }

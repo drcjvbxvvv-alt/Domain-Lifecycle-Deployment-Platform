@@ -735,7 +735,9 @@ a fee schedule defines standard pricing, and domains auto-inherit unless
 
 ### PA.6 — Tags + Bulk Operations
 
-**Owner**: Sonnet
+**Status**: ✅ COMPLETED 2026-04-21
+
+**Owner**: Sonnet (executed by Opus)
 **Depends on**: PA.1 (tags + domain_tags tables), PA.3 (domain list page)
 **Reads first**: `docs/DOMAIN_ASSET_LAYER_DESIGN.md` D8
 
@@ -814,6 +816,60 @@ mass-updating domain properties.
 - CSV export includes all visible columns + tags
 - Delete tag → detaches from all domains, tag removed
 - `go test ./internal/tag/...` passes
+
+**Delivered (2026-04-21)**:
+
+- `store/postgres/domain.go` — Added `TagID *int64` field to `ListFilter` (subquery
+  join against `domain_tags`); `BulkUpdateFields(ctx, ids, registrarAccountID,
+  dnsProviderID, autoRenew)` with dynamic SET clause and positional $N params
+- `internal/lifecycle/service.go` — Added `TagID *int64` to `ListInput`, propagated
+  to `ListFilter`
+- `api/handler/domain.go` — Added `tag_id` query param parsing to `List` handler
+- `web/src/api/domain.ts` — Added `tag_id` to `DomainListParams`
+- `internal/tag/service.go` — `Service` wrapping `TagStore + DomainStore`:
+  - `ValidateColor(*string)` — `#RRGGBB` hex regex; nil accepted
+  - Tag CRUD: `Create` (with duplicate name detection), `GetByID`, `ListWithCounts`,
+    `Update`, `Delete` (CASCADE handles domain_tags)
+  - `GetDomainTags`, `SetDomainTags` — per-domain tag read/write
+  - `BulkAddTags(domainIDs, tagIDs)` — union merge (reads existing, adds new)
+  - `BulkRemoveTags(domainIDs, tagIDs)` — set difference
+  - `BulkUpdateFields` — delegates to `DomainStore.BulkUpdateFields`
+  - `ExportDomains` — delegates to `ListWithFilter` for CSV export
+- `internal/tag/service_test.go` — 3 tests:
+  - `TestValidateColor` — 12 sub-cases (4 valid hex, 6 invalid, empty, nil)
+  - `TestSentinelErrors` — 4 sentinel errors are distinct
+  - `TestColorRePattern` — 5 regex boundary checks
+- `api/handler/tag.go` — 9 handlers:
+  - Tag CRUD: `Create` (201/409), `List` (with domain_count), `Update`, `Delete`
+  - Domain tags: `GetDomainTags`, `SetDomainTags`
+  - Bulk: `BulkAction` — supports "update" (fields), "add_tags", "remove_tags";
+    500-domain cap; validates required fields per action
+  - CSV: `Export` — streams `text/csv` with header row; includes per-domain tags
+    (semicolon-delimited); supports project_id/tag_id/lifecycle_state filters
+- `api/router/router.go` — registered routes:
+  - `POST/GET /tags`, `PUT/DELETE /tags/:id`
+  - `GET/PUT /domains/:id/tags`
+  - `POST /domains/bulk` (static, before /:id)
+  - `GET /domains/export` (static, before /:id)
+  - `TagHandler` added to `Deps` struct
+- `cmd/server/main.go` — wired `TagStore → tag.Service → TagHandler`
+- `web/src/types/tag.ts` — `TagResponse`, `CreateTagRequest`, `UpdateTagRequest`,
+  `BulkAction` union, `BulkActionRequest`
+- `web/src/api/tag.ts` — full API client (CRUD + domain tags + bulk + export URL)
+- `web/src/stores/tag.ts` — Pinia store with all actions + local array updates
+- `web/src/views/settings/TagList.vue` — list table (NTag colour preview,
+  domain_count, create/edit modals, NPopconfirm delete)
+- `web/src/views/domains/DomainList.vue` — tag filter dropdown, selection column
+  (`type: 'selection'`), bulk action bar (appears when rows selected — tag add
+  via dropdown), CSV export button
+- `web/src/views/domains/DomainDetail.vue` — multi-select tag editor in sidebar
+  (NSelect multiple, updates via `setDomainTags`)
+- `web/src/components/AppTable.vue` — added `v-bind="attrs"` pass-through to
+  NDataTable for `checked-row-keys` and other attribute forwarding
+- `web/src/router/index.ts` — added `/settings/tags` route
+- `web/src/views/layouts/MainLayout.vue` — added "標籤管理" sidebar entry
+- `go build ./...` passes; `go test ./internal/tag/...` 3 tests pass;
+  `npm run build` zero TypeScript errors
 
 ---
 

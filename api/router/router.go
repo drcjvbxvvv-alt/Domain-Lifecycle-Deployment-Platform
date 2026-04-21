@@ -22,6 +22,7 @@ type Deps struct {
 	DNSProviderHandler *handler.DNSProviderHandler
 	SSLHandler         *handler.SSLHandler
 	CostHandler        *handler.CostHandler
+	TagHandler         *handler.TagHandler
 	JWTManager         *auth.JWTManager
 }
 
@@ -67,6 +68,8 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			// Static sub-paths (before /:id)
 			domains.GET("/expiring", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DomainHandler.Expiring)
 			domains.GET("/stats", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DomainHandler.Stats)
+			domains.POST("/bulk", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.TagHandler.BulkAction)
+			domains.GET("/export", middleware.RequireAnyRole("operator", "release_manager", "admin", "auditor"), deps.TagHandler.Export)
 			// Parameterized routes
 			domains.GET("/:id", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DomainHandler.Get)
 			domains.PUT("/:id", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.DomainHandler.UpdateAsset)
@@ -76,6 +79,9 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			domains.POST("/:id/transfer", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.DomainHandler.InitiateTransfer)
 			domains.POST("/:id/transfer/complete", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.DomainHandler.CompleteTransfer)
 			domains.POST("/:id/transfer/cancel", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.DomainHandler.CancelTransfer)
+			// Domain tags
+			domains.GET("/:id/tags", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.TagHandler.GetDomainTags)
+			domains.PUT("/:id/tags", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.TagHandler.SetDomainTags)
 		}
 
 		// ── Templates (individual) ─────────────────────────────────────
@@ -163,6 +169,15 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 		domains.POST("/:id/ssl-certs", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.SSLHandler.Create)
 		domains.GET("/:id/ssl-certs", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.SSLHandler.List)
 		domains.POST("/:id/ssl-certs/check", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.SSLHandler.Check)
+
+		// ── Tags ───────────────────────────────────────────────────────
+		tags := authed.Group("/tags")
+		{
+			tags.POST("", middleware.RequireAnyRole("admin"), deps.TagHandler.Create)
+			tags.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.TagHandler.List)
+			tags.PUT("/:id", middleware.RequireAnyRole("admin"), deps.TagHandler.Update)
+			tags.DELETE("/:id", middleware.RequireAnyRole("admin"), deps.TagHandler.Delete)
+		}
 
 		// ── Fee Schedules ──────────────────────────────────────────────
 		feeSchedules := authed.Group("/fee-schedules")
