@@ -25,6 +25,7 @@ type Deps struct {
 	TagHandler         *handler.TagHandler
 	ExpiryHandler      *handler.ExpiryHandler
 	ImportHandler      *handler.ImportHandler
+	DNSQueryHandler    *handler.DNSQueryHandler
 	JWTManager         *auth.JWTManager
 }
 
@@ -95,6 +96,8 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			// Domain tags
 			domains.GET("/:id/tags", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.TagHandler.GetDomainTags)
 			domains.PUT("/:id/tags", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.TagHandler.SetDomainTags)
+			// DNS record lookup (live query)
+			domains.GET("/:id/dns-records", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.LookupByDomain)
 		}
 
 		// ── Templates (individual) ─────────────────────────────────────
@@ -210,6 +213,12 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 		costs := authed.Group("/costs")
 		{
 			costs.GET("/summary", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.CostHandler.GetCostSummary)
+		}
+
+		// ── DNS Lookup (arbitrary FQDN) ───────────────────────────
+		dnsLookup := authed.Group("/dns")
+		{
+			dnsLookup.GET("/lookup", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.LookupByFQDN)
 		}
 
 		// ── DNS Providers ─────────────────────────────────────────────

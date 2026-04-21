@@ -18,7 +18,9 @@ import { useSSLStore } from '@/stores/ssl'
 import { useCostStore } from '@/stores/cost'
 import { useTagStore } from '@/stores/tag'
 import { domainApi } from '@/api/domain'
+import { dnsApi } from '@/api/dns'
 import type { DomainLifecycleHistoryEntry, UpdateDomainAssetRequest } from '@/types/domain'
+import type { DNSRecord, DNSLookupResult } from '@/types/dns'
 import type { SSLCertResponse } from '@/types/ssl'
 import type { DomainCostResponse, CostType } from '@/types/cost'
 import type { DomainLifecycleState, ApiResponse } from '@/types/common'
@@ -339,6 +341,46 @@ async function handleTagChange(ids: number[]) {
   }
 }
 
+// ── DNS Records ──────────────────────────────────────────────────────────────
+const dnsLoading   = ref(false)
+const dnsResult    = ref<DNSLookupResult | null>(null)
+
+const dnsRecordTypeColor: Record<string, string> = {
+  A:     'success',
+  AAAA:  'info',
+  CNAME: 'warning',
+  MX:    'default',
+  TXT:   'default',
+  NS:    'info',
+}
+
+const dnsColumns: DataTableColumns<DNSRecord> = [
+  { title: '類型', key: 'type', width: 80,
+    render: (row): VNodeChild => h(NTag, { type: dnsRecordTypeColor[row.type] as any, size: 'small', bordered: false }, { default: () => row.type }),
+  },
+  { title: '值', key: 'value', ellipsis: { tooltip: true },
+    render: (row): VNodeChild => {
+      const parts = [row.value]
+      if (row.type === 'MX' && row.priority !== undefined) {
+        parts.unshift(`[${row.priority}]`)
+      }
+      return h('code', { style: 'font-size:12px; word-break:break-all' }, parts.join(' '))
+    },
+  },
+]
+
+async function handleDNSLookup() {
+  dnsLoading.value = true
+  try {
+    const res = await dnsApi.lookupByDomain(domainId) as unknown as { data: DNSLookupResult }
+    dnsResult.value = res.data
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || 'DNS 查詢失敗')
+  } finally {
+    dnsLoading.value = false
+  }
+}
+
 // ── Cost ─────────────────────────────────────────────────────────────────────
 const showCostCreate = ref(false)
 const costCreating   = ref(false)
@@ -589,6 +631,44 @@ onMounted(async () => {
                 :max-height="320"
                 scroll-x="700"
               />
+            </div>
+          </NTabPane>
+
+          <!-- DNS Records tab -->
+          <NTabPane name="dns" :tab="`DNS 查詢 (${dnsResult?.records?.length ?? '-'})`">
+            <div class="tab-section">
+              <div style="display:flex; gap:8px; margin-bottom: 12px; align-items:center;">
+                <NButton type="primary" size="small" :loading="dnsLoading" @click="handleDNSLookup">
+                  {{ dnsResult ? '重新查詢' : '查詢 DNS 記錄' }}
+                </NButton>
+                <span v-if="dnsResult" style="font-size:12px; color:var(--text-muted)">
+                  查詢時間：{{ new Date(dnsResult.queried_at).toLocaleString('zh-TW') }}
+                </span>
+              </div>
+
+              <template v-if="dnsResult && !dnsResult.error">
+                <NDataTable
+                  :columns="dnsColumns"
+                  :data="dnsResult.records"
+                  :row-key="(_r: DNSRecord, i: number) => i"
+                  size="small"
+                  :max-height="400"
+                  striped
+                />
+                <div v-if="dnsResult.records.length === 0" style="padding:16px; text-align:center; color:var(--text-muted); font-size:13px;">
+                  未找到任何 DNS 記錄
+                </div>
+              </template>
+
+              <template v-else-if="dnsResult?.error">
+                <div style="padding:16px; color:var(--error); font-size:13px;">
+                  查詢錯誤：{{ dnsResult.error }}
+                </div>
+              </template>
+
+              <div v-else style="padding:24px; text-align:center; color:var(--text-muted); font-size:13px;">
+                點擊「查詢 DNS 記錄」按鈕以取得此域名的即時 DNS 解析結果（A / AAAA / CNAME / MX / TXT / NS）
+              </div>
             </div>
           </NTabPane>
 
