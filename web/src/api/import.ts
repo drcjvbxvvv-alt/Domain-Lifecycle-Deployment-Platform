@@ -1,4 +1,4 @@
-import { apiClient } from './client'
+import { http as apiClient } from '@/utils/http'
 import type { ApiResponse } from '@/types/common'
 import type { ImportJob, PreviewResult } from '@/types/import'
 
