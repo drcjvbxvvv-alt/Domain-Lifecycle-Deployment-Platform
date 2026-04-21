@@ -20,6 +20,7 @@ import (
 	agentsvc "domain-platform/internal/agent"
 	"domain-platform/internal/auth"
 	"domain-platform/internal/bootstrap"
+	costsvc "domain-platform/internal/cost"
 	"domain-platform/internal/dnsprovider"
 	"domain-platform/internal/lifecycle"
 	"domain-platform/internal/project"
@@ -113,6 +114,10 @@ func main() {
 	sslSvc := sslsvc.NewService(sslCertStore, domainStore, logger)
 	sslHandler := handler.NewSSLHandler(sslSvc, logger)
 
+	costStore := postgres.NewCostStore(db)
+	costSvc := costsvc.NewService(costStore, domainStore, registrarStore, logger)
+	costHandler := handler.NewCostHandler(costSvc, logger)
+
 	// ── Management API listener (:8080, JWT auth) ──────────────────────────
 	mgmtRouter := buildManagementRouter(logger, router.Deps{
 		AuthHandler:        authHandler,
@@ -126,6 +131,7 @@ func main() {
 		RegistrarHandler:   registrarHandler,
 		DNSProviderHandler: dnsProviderHandler,
 		SSLHandler:         sslHandler,
+		CostHandler:        costHandler,
 		JWTManager:         jwtMgr,
 	})
 	mgmtAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

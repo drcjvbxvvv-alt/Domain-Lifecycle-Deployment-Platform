@@ -613,6 +613,8 @@ expiry checking via TLS connection probing.
 
 ### PA.5 — Fee Schedule + Cost Tracking
 
+**Status**: ✅ COMPLETED 2026-04-21
+
 **Owner**: Sonnet
 **Depends on**: PA.1 (domain_fee_schedules + domain_costs tables), PA.2
 (registrar exists), PA.3 (domain has annual_cost field)
@@ -681,6 +683,53 @@ a fee schedule defines standard pricing, and domains auto-inherit unless
 - Add cost record (type=renewal, amount=$10.98) → visible in history
 - `GET /api/v1/costs/summary?group_by=registrar` → correct totals
 - `go test ./internal/cost/...` passes
+
+**Delivered (2026-04-21)**:
+
+- `store/postgres/domain.go` — Added `UpdateAnnualCost(ctx, domainID, cost, currency)` — only
+  updates rows where `fee_fixed = false` (WHERE clause guard prevents overwriting operator-fixed prices)
+- `internal/cost/service.go` — `Service` wrapping `CostStore + DomainStore + RegistrarStore`:
+  - `ValidCostTypes` map (registration/renewal/transfer/privacy/other)
+  - `ValidCurrencies` map (USD/EUR/GBP/CNY/TWD/JPY/AUD/CAD/HKD/SGD/KRW/INR)
+  - Fee schedule CRUD: `CreateFeeSchedule` (with TLD normalization + duplicate detection),
+    `GetFeeScheduleByID`, `ListFeeSchedules` (optional registrar filter), `UpdateFeeSchedule`,
+    `DeleteFeeSchedule`
+  - Cost records: `CreateCost` (validates cost_type + currency), `ListCostsByDomain`
+  - `TryApplyFeeSchedule(ctx, domainID)` — load domain → get registrar_account → get registrar →
+    lookup fee schedule by (registrar_id, tld) → call `UpdateAnnualCost`; returns nil on any
+    missing step (never fails a domain operation because of missing pricing data)
+  - `RecalculateAllCosts(ctx)` — batch TryApplyFeeSchedule across all non-fee-fixed domains,
+    returns (updated, skipped, failed) counts
+  - `GetCostSummary(ctx, groupBy)` — delegates to store aggregate queries (by registrar or tld)
+  - `normalizeTLD` — prepends "." and lowercases; idempotent
+  - `validateCurrency` — case-insensitive lookup against ValidCurrencies map
+- `internal/cost/service_test.go` — 22 assertions across 5 tests:
+  - `TestNormalizeTLD` — 9 cases (.com, com, .co.uk, trim, empty)
+  - `TestValidateCurrency` — 8 valid + 4 invalid (ErrInvalidCurrency wrapping verified)
+  - `TestValidCostTypes` — 5 valid + 4 invalid
+  - `TestSentinelErrors` — 4 sentinel errors are distinct non-empty strings
+  - `TestNormalizeTLDIdempotent` — 6 inputs verified idempotent
+- `api/handler/cost.go` — 6 handlers: `CreateFeeSchedule` (201), `ListFeeSchedules` (200),
+  `UpdateFeeSchedule` (200/404), `DeleteFeeSchedule` (200/404), `CreateDomainCost` (201),
+  `ListDomainCosts` (200), `GetCostSummary` (200, group_by=registrar|tld)
+- `api/router/router.go` — registered routes:
+  - `POST/GET /fee-schedules`, `PUT/DELETE /fee-schedules/:id`
+  - `POST/GET /domains/:id/costs`
+  - `GET /costs/summary?group_by=registrar|tld`
+  - `CostHandler` added to `Deps` struct
+- `cmd/server/main.go` — wired `CostStore → cost.Service → CostHandler`
+- `web/src/types/cost.ts` — `FeeScheduleResponse`, `DomainCostResponse`, `CostSummaryItem`,
+  `CostType` union, create/update request types
+- `web/src/api/cost.ts` — full API client for all 7 endpoints
+- `web/src/stores/cost.ts` — Pinia store with all actions + local array updates on create/delete
+- `web/src/views/settings/FeeScheduleList.vue` — list table (registrar name lookup, per-type fee
+  columns), filter by registrar, create modal, edit modal, NPopconfirm delete
+- `web/src/views/domains/DomainDetail.vue` — added "費用記錄" tab with NDataTable (cost_type,
+  amount+currency, paid_at, period dates, notes) + "新增費用記錄" modal
+- `web/src/router/index.ts` — added `/settings/fee-schedules` route
+- `web/src/views/layouts/MainLayout.vue` — added "費率表管理" sidebar entry
+- `go build ./...` passes; `go test ./internal/cost/...` 5 tests pass;
+  `npm run build` zero TypeScript errors
 
 ---
 

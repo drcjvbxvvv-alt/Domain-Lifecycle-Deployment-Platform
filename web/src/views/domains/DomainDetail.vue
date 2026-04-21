@@ -15,9 +15,11 @@ import { useDomainStore } from '@/stores/domain'
 import { useRegistrarStore } from '@/stores/registrar'
 import { useDNSProviderStore } from '@/stores/dnsprovider'
 import { useSSLStore } from '@/stores/ssl'
+import { useCostStore } from '@/stores/cost'
 import { domainApi } from '@/api/domain'
 import type { DomainLifecycleHistoryEntry, UpdateDomainAssetRequest } from '@/types/domain'
 import type { SSLCertResponse } from '@/types/ssl'
+import type { DomainCostResponse, CostType } from '@/types/cost'
 import type { DomainLifecycleState, ApiResponse } from '@/types/common'
 import type { SelectOption } from 'naive-ui'
 
@@ -25,8 +27,9 @@ const route    = useRoute()
 const store    = useDomainStore()
 const regStore = useRegistrarStore()
 const dnsStore = useDNSProviderStore()
-const sslStore = useSSLStore()
-const message  = useMessage()
+const sslStore  = useSSLStore()
+const costStore = useCostStore()
+const message   = useMessage()
 
 // domain ID from route (numeric)
 const idParam = route.params.id as string
@@ -321,6 +324,66 @@ async function handleSSLDelete(id: number) {
   }
 }
 
+// ── Cost ──────────────────────────────────────────────────────────────────────
+const showCostCreate = ref(false)
+const costCreating   = ref(false)
+const costForm       = ref<{ cost_type: CostType; amount: number; currency: string; paid_at: string; notes: string }>({
+  cost_type: 'renewal', amount: 0, currency: 'USD', paid_at: '', notes: '',
+})
+
+const costTypeOptions = [
+  { label: '註冊', value: 'registration' },
+  { label: '續約', value: 'renewal' },
+  { label: '轉移', value: 'transfer' },
+  { label: 'WHOIS 隱私', value: 'privacy' },
+  { label: '其他', value: 'other' },
+]
+
+const costCurrencyOptions = [
+  { label: 'USD', value: 'USD' }, { label: 'EUR', value: 'EUR' },
+  { label: 'TWD', value: 'TWD' }, { label: 'CNY', value: 'CNY' },
+  { label: 'JPY', value: 'JPY' }, { label: 'AUD', value: 'AUD' },
+]
+
+const costColumns: DataTableColumns<DomainCostResponse> = [
+  { title: '類型', key: 'cost_type', width: 90 },
+  { title: '金額', key: 'amount', width: 100,
+    render: (row): VNodeChild => `${row.amount.toFixed(2)} ${row.currency}` },
+  { title: '付款日', key: 'paid_at', width: 110,
+    render: (row): VNodeChild => row.paid_at ?? '-' },
+  { title: '週期起', key: 'period_start', width: 110,
+    render: (row): VNodeChild => row.period_start ?? '-' },
+  { title: '週期止', key: 'period_end', width: 110,
+    render: (row): VNodeChild => row.period_end ?? '-' },
+  { title: '備注', key: 'notes', ellipsis: { tooltip: true } },
+  { title: '建立時間', key: 'created_at', width: 170,
+    render: (row): VNodeChild => new Date(row.created_at).toLocaleString('zh-TW') },
+]
+
+async function handleCostCreate() {
+  if (!costForm.value.cost_type || costForm.value.amount <= 0) {
+    message.warning('請選擇費用類型並輸入金額')
+    return
+  }
+  costCreating.value = true
+  try {
+    await costStore.createDomainCost(domainId, {
+      cost_type: costForm.value.cost_type,
+      amount:    costForm.value.amount,
+      currency:  costForm.value.currency,
+      paid_at:   costForm.value.paid_at || null,
+      notes:     costForm.value.notes || null,
+    })
+    message.success('費用記錄已新增')
+    showCostCreate.value = false
+    costForm.value = { cost_type: 'renewal', amount: 0, currency: 'USD', paid_at: '', notes: '' }
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || '新增失敗')
+  } finally {
+    costCreating.value = false
+  }
+}
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 function fmtDate(s: string | null | undefined): string {
   return s ? new Date(s).toLocaleDateString('zh-TW') : '-'
@@ -329,7 +392,12 @@ function fmtDate(s: string | null | undefined): string {
 onMounted(async () => {
   await store.fetchOne(domainId)
   await refreshHistory()
-  await Promise.all([regStore.fetchList(), dnsStore.fetchList(), sslStore.fetchList(domainId)])
+  await Promise.all([
+    regStore.fetchList(),
+    dnsStore.fetchList(),
+    sslStore.fetchList(domainId),
+    costStore.fetchDomainCosts(domainId),
+  ])
 })
 </script>
 
@@ -497,6 +565,33 @@ onMounted(async () => {
             </div>
           </NTabPane>
 
+          <!-- Cost tab -->
+          <NTabPane name="cost" :tab="`費用記錄 (${costStore.domainCosts.length})`">
+            <div class="tab-section">
+              <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center;">
+                <span style="font-size:13px; color:var(--text-muted)">
+                  年費：
+                  <strong>
+                    {{ store.current?.annual_cost != null
+                      ? `${store.current.annual_cost} ${store.current.currency ?? ''}`
+                      : '未設定' }}
+                  </strong>
+                  <template v-if="store.current?.fee_fixed">（已固定）</template>
+                </span>
+                <NButton size="small" type="primary" @click="showCostCreate = true">新增費用記錄</NButton>
+              </div>
+              <NDataTable
+                :columns="costColumns"
+                :data="costStore.domainCosts"
+                :loading="costStore.loading"
+                :row-key="(r: DomainCostResponse) => r.id"
+                size="small"
+                :max-height="320"
+                scroll-x="760"
+              />
+            </div>
+          </NTabPane>
+
           <!-- History tab -->
           <NTabPane name="history" :tab="`狀態歷史 (${history.length})`">
             <NTimeline class="history-timeline">
@@ -617,6 +712,47 @@ onMounted(async () => {
         <NSpace justify="end">
           <NButton @click="showEdit = false">取消</NButton>
           <NButton type="primary" :loading="saving" @click="submitEdit">儲存</NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <!-- Cost create modal -->
+    <NModal
+      v-model:show="showCostCreate"
+      preset="card"
+      title="新增費用記錄"
+      style="width: 460px"
+      :mask-closable="false"
+    >
+      <NForm label-placement="left" label-width="100px">
+        <NFormItem label="費用類型" required>
+          <NSelect v-model:value="(costForm as any).cost_type" :options="costTypeOptions" />
+        </NFormItem>
+        <NFormItem label="金額" required>
+          <NSpace>
+            <NInputNumber
+              v-model:value="(costForm as any).amount"
+              :min="0" :precision="2"
+              style="width:120px"
+            />
+            <NSelect
+              v-model:value="(costForm as any).currency"
+              :options="costCurrencyOptions"
+              style="width:90px"
+            />
+          </NSpace>
+        </NFormItem>
+        <NFormItem label="付款日">
+          <NInput v-model:value="costForm.paid_at" placeholder="YYYY-MM-DD（選填）" clearable />
+        </NFormItem>
+        <NFormItem label="備注">
+          <NInput v-model:value="costForm.notes" type="textarea" :rows="2" clearable />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="showCostCreate = false">取消</NButton>
+          <NButton type="primary" :loading="costCreating" @click="handleCostCreate">新增</NButton>
         </NSpace>
       </template>
     </NModal>

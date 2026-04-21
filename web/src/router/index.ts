@@ -159,6 +159,12 @@ const router = createRouter({
           component: () => import('@/views/settings/UserList.vue'),
           meta: { title: '使用者管理', minRole: 'admin' },
         },
+        {
+          path: 'settings/fee-schedules',
+          name: 'FeeScheduleList',
+          component: () => import('@/views/settings/FeeScheduleList.vue'),
+          meta: { title: '費率表管理', minRole: 'admin' },
+        },
       ],
     },
 

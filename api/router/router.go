@@ -21,6 +21,7 @@ type Deps struct {
 	RegistrarHandler   *handler.RegistrarHandler
 	DNSProviderHandler *handler.DNSProviderHandler
 	SSLHandler         *handler.SSLHandler
+	CostHandler        *handler.CostHandler
 	JWTManager         *auth.JWTManager
 }
 
@@ -162,6 +163,26 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 		domains.POST("/:id/ssl-certs", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.SSLHandler.Create)
 		domains.GET("/:id/ssl-certs", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.SSLHandler.List)
 		domains.POST("/:id/ssl-certs/check", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.SSLHandler.Check)
+
+		// ── Fee Schedules ──────────────────────────────────────────────
+		feeSchedules := authed.Group("/fee-schedules")
+		{
+			feeSchedules.POST("", middleware.RequireAnyRole("admin"), deps.CostHandler.CreateFeeSchedule)
+			feeSchedules.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.CostHandler.ListFeeSchedules)
+			feeSchedules.PUT("/:id", middleware.RequireAnyRole("admin"), deps.CostHandler.UpdateFeeSchedule)
+			feeSchedules.DELETE("/:id", middleware.RequireAnyRole("admin"), deps.CostHandler.DeleteFeeSchedule)
+		}
+
+		// ── Cost Records (nested under domains) ────────────────────────
+		domains.POST("/:id/costs", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.CostHandler.CreateDomainCost)
+		domains.GET("/:id/costs", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.CostHandler.ListDomainCosts)
+
+		// ── Cost Summary ───────────────────────────────────────────────
+		// Static path: /costs/summary — registered here (not under domains).
+		costs := authed.Group("/costs")
+		{
+			costs.GET("/summary", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.CostHandler.GetCostSummary)
+		}
 
 		// ── DNS Providers ─────────────────────────────────────────────
 		dnsProviders := authed.Group("/dns-providers")

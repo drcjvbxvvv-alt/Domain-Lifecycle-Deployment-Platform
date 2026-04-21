@@ -262,6 +262,19 @@ func (s *DomainStore) UpdateTransferStatus(ctx context.Context, domainID int64, 
 	return nil
 }
 
+// UpdateAnnualCost sets annual_cost and currency for a single domain.
+// Called by the cost service when a fee schedule lookup succeeds.
+func (s *DomainStore) UpdateAnnualCost(ctx context.Context, domainID int64, cost float64, currency string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE domains SET annual_cost = $2, currency = $3, updated_at = NOW()
+		 WHERE id = $1 AND deleted_at IS NULL AND fee_fixed = false`,
+		domainID, cost, currency)
+	if err != nil {
+		return fmt.Errorf("update annual cost: %w", err)
+	}
+	return nil
+}
+
 // ListFilter holds optional filters for querying domains.
 type ListFilter struct {
 	ProjectID      *int64
