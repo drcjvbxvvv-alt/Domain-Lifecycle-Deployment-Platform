@@ -109,6 +109,9 @@ func (s *DomainStore) Create(ctx context.Context, d *Domain) (*Domain, error) {
 	if d.TechContact == nil {
 		d.TechContact = json.RawMessage(`{}`)
 	}
+	if d.Metadata == nil {
+		d.Metadata = json.RawMessage(`{}`)
+	}
 
 	var out Domain
 	err := s.db.QueryRowxContext(ctx,
