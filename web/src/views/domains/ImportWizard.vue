@@ -200,14 +200,31 @@ function goToJobHistory() {
           >
             <NUploadDragger class="upload-dragger">
               <p class="upload-hint">拖拽或點擊選擇 CSV 檔案</p>
-              <p class="upload-sub">支援格式：fqdn, expiry_date, auto_renew, registrar_account_id, dns_provider_id, tags, notes</p>
+              <p class="upload-sub">支援 .csv 格式，檔案大小上限 10 MB，單次最多 5,000 筆</p>
             </NUploadDragger>
           </NUpload>
 
           <NAlert type="info" class="csv-hint">
-            <strong>CSV 範例：</strong><br>
-            <code>fqdn,expiry_date,auto_renew,tags,notes</code><br>
-            <code>example.com,2027-03-15,true,"production;core",Main site</code>
+            <div class="csv-hint-title">📋 CSV 欄位說明</div>
+            <table class="csv-field-table">
+              <thead>
+                <tr><th>欄位</th><th>必填</th><th>說明</th><th>範例</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>fqdn</td><td>✅</td><td>完整域名</td><td>shop.example.com</td></tr>
+                <tr><td>expiry_date</td><td>選填</td><td>到期日（年-月-日）</td><td>2027-03-15</td></tr>
+                <tr><td>auto_renew</td><td>選填</td><td>是否自動續約（預設 true）</td><td>true / false</td></tr>
+                <tr><td>registrar_account_id</td><td>選填</td><td>Registrar 帳號 ID</td><td>1</td></tr>
+                <tr><td>dns_provider_id</td><td>選填</td><td>DNS 服務商 ID</td><td>2</td></tr>
+                <tr><td>tags</td><td>選填</td><td>標籤，多個用分號分隔</td><td>production;core</td></tr>
+                <tr><td>notes</td><td>選填</td><td>備注說明</td><td>主站</td></tr>
+              </tbody>
+            </table>
+            <div class="csv-hint-title" style="margin-top:12px">📄 範例內容</div>
+            <pre class="csv-example">fqdn,expiry_date,auto_renew,tags,notes
+shop.example.com,2027-03-15,true,"production;core",主站
+blog.example.com,2027-06-01,true,staging,部落格
+minimal.io,,,, </pre>
           </NAlert>
 
           <div class="step-actions">
@@ -410,9 +427,44 @@ function goToJobHistory() {
 .csv-hint {
   font-size: 13px;
 }
-.csv-hint code {
+.csv-hint-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.csv-field-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.csv-field-table th {
+  text-align: left;
+  padding: 4px 10px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.csv-field-table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  vertical-align: top;
+}
+.csv-field-table td:nth-child(3),
+.csv-field-table td:nth-child(4) {
+  font-family: inherit;
+}
+.csv-example {
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 8px 12px;
   font-family: var(--font-mono);
   font-size: 12px;
+  white-space: pre;
+  margin: 0;
+  overflow-x: auto;
 }
 
 /* Preview step */
