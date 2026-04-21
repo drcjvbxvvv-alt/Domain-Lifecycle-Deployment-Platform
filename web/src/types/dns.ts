@@ -21,3 +21,23 @@ export interface DNSLookupResult {
   elapsed_ms: number
   error?: string
 }
+
+// ── Propagation check types ──────────────────────────────────────────────────
+
+export interface ResolverResult {
+  address: string
+  label: string
+  records: DNSRecord[]
+  authoritative: boolean
+  elapsed_ms: number
+  error?: string
+}
+
+export interface PropagationResult {
+  fqdn: string
+  query_types: string[]
+  resolvers: ResolverResult[]
+  consistent: boolean
+  queried_at: string
+  total_ms: number
+}

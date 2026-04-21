@@ -20,7 +20,7 @@ import { useTagStore } from '@/stores/tag'
 import { domainApi } from '@/api/domain'
 import { dnsApi } from '@/api/dns'
 import type { DomainLifecycleHistoryEntry, UpdateDomainAssetRequest } from '@/types/domain'
-import type { DNSRecord, DNSLookupResult } from '@/types/dns'
+import type { DNSRecord, DNSLookupResult, PropagationResult, ResolverResult } from '@/types/dns'
 import type { SSLCertResponse } from '@/types/ssl'
 import type { DomainCostResponse, CostType } from '@/types/cost'
 import type { DomainLifecycleState, ApiResponse } from '@/types/common'
@@ -381,6 +381,43 @@ async function handleDNSLookup() {
   }
 }
 
+// ── Propagation check ────────────────────────────────────────────────────────
+const propLoading   = ref(false)
+const propResult    = ref<PropagationResult | null>(null)
+const propQueryType = ref('A')
+
+const propTypeOptions = [
+  { label: 'A',    value: 'A' },
+  { label: 'AAAA', value: 'AAAA' },
+  { label: 'MX',   value: 'MX' },
+  { label: 'NS',   value: 'NS' },
+  { label: 'TXT',  value: 'TXT' },
+  { label: 'CNAME', value: 'CNAME' },
+  { label: 'CAA',  value: 'CAA' },
+]
+
+async function handlePropagationCheck() {
+  propLoading.value = true
+  try {
+    const res = await dnsApi.propagationByDomain(domainId, propQueryType.value) as unknown as { data: PropagationResult }
+    propResult.value = res.data
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || '傳播檢查失敗')
+  } finally {
+    propLoading.value = false
+  }
+}
+
+function propRecordSummary(resolver: ResolverResult): string {
+  if (resolver.error) return `錯誤: ${resolver.error}`
+  if (!resolver.records || resolver.records.length === 0) return '（無記錄）'
+  return resolver.records.map(r => {
+    const prefix = (r.type === 'MX' || r.type === 'SRV') && r.priority !== undefined
+      ? `[${r.priority}] ` : ''
+    return `${prefix}${r.value}`
+  }).join(', ')
+}
+
 // ── Cost ─────────────────────────────────────────────────────────────────────
 const showCostCreate = ref(false)
 const costCreating   = ref(false)
@@ -669,7 +706,68 @@ onMounted(async () => {
               </template>
 
               <div v-else style="padding:24px; text-align:center; color:var(--text-muted); font-size:13px;">
-                點擊「查詢 DNS 記錄」按鈕以取得此域名的即時 DNS 解析結果（A / AAAA / CNAME / MX / TXT / NS）
+                點擊「查詢 DNS 記錄」按鈕以取得此域名的即時 DNS 解析結果（A / AAAA / CNAME / MX / TXT / NS / SOA / SRV / CAA）
+              </div>
+            </div>
+          </NTabPane>
+
+          <!-- Propagation tab -->
+          <NTabPane name="propagation" tab="傳播檢測">
+            <div class="tab-section">
+              <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
+                <NSelect
+                  v-model:value="propQueryType"
+                  :options="propTypeOptions"
+                  style="width:100px"
+                  size="small"
+                />
+                <NButton type="primary" size="small" :loading="propLoading" @click="handlePropagationCheck">
+                  檢測傳播狀態
+                </NButton>
+                <template v-if="propResult">
+                  <NTag :type="propResult.consistent ? 'success' : 'warning'" size="small" :bordered="false">
+                    {{ propResult.consistent ? '一致' : '不一致' }}
+                  </NTag>
+                  <span class="dns-meta">
+                    耗時 {{ propResult.total_ms }}ms
+                    ・{{ new Date(propResult.queried_at).toLocaleString('zh-TW') }}
+                  </span>
+                </template>
+              </div>
+
+              <template v-if="propResult">
+                <div class="prop-grid">
+                  <div
+                    v-for="resolver in propResult.resolvers"
+                    :key="resolver.address"
+                    class="prop-card"
+                    :class="{ 'prop-card--auth': resolver.authoritative, 'prop-card--error': !!resolver.error }"
+                  >
+                    <div class="prop-card__header">
+                      <span class="prop-card__label">{{ resolver.label }}</span>
+                      <span class="prop-card__meta">{{ resolver.address }} ・{{ resolver.elapsed_ms }}ms</span>
+                    </div>
+                    <div v-if="resolver.error" class="prop-card__error">
+                      {{ resolver.error }}
+                    </div>
+                    <div v-else-if="resolver.records && resolver.records.length > 0" class="prop-card__records">
+                      <div
+                        v-for="(rec, idx) in resolver.records"
+                        :key="idx"
+                        class="prop-record"
+                      >
+                        <NTag :type="dnsRecordTypeColor[rec.type] || 'default'" size="tiny" :bordered="false">{{ rec.type }}</NTag>
+                        <code class="prop-record__value">{{ rec.value }}</code>
+                        <span class="prop-record__ttl">TTL {{ rec.ttl }}s</span>
+                      </div>
+                    </div>
+                    <div v-else class="prop-card__empty">（無記錄）</div>
+                  </div>
+                </div>
+              </template>
+
+              <div v-else style="padding:24px; text-align:center; color:var(--text-muted); font-size:13px;">
+                選擇記錄類型後點擊「檢測傳播狀態」，同時查詢 Google / Cloudflare / Quad9 / OpenDNS + 權威 NS，比對結果是否一致。
               </div>
             </div>
           </NTabPane>
@@ -977,6 +1075,72 @@ onMounted(async () => {
   gap: 8px;
   margin-top: 16px;
 }
+/* ── Propagation grid ────────────────────────────────────────────────────── */
+.prop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.prop-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--bg-surface);
+}
+.prop-card--auth {
+  border-left: 3px solid var(--primary);
+}
+.prop-card--error {
+  border-left: 3px solid var(--error, #d03050);
+}
+.prop-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.prop-card__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.prop-card__meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.prop-card__error {
+  font-size: 12px;
+  color: var(--error, #d03050);
+  word-break: break-all;
+}
+.prop-card__empty {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.prop-card__records {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.prop-record {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.prop-record__value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  word-break: break-all;
+  flex: 1;
+}
+.prop-record__ttl {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .dns-meta {
   font-size: 12px;
   color: var(--text-muted);

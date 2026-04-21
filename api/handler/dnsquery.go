@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -55,4 +56,60 @@ func (h *DNSQueryHandler) LookupByFQDN(c *gin.Context) {
 	result := h.dns.Lookup(c.Request.Context(), fqdn)
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result, "message": "ok"})
+}
+
+// PropagationByDomain handles GET /api/v1/domains/:id/dns-propagation
+// Checks DNS propagation across multiple public resolvers + authoritative NS.
+// Query param: types (comma-separated, default "A,AAAA")
+func (h *DNSQueryHandler) PropagationByDomain(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 40001, "data": nil, "message": "invalid domain id"})
+		return
+	}
+
+	domain, err := h.lifecycle.GetByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 40401, "data": nil, "message": "domain not found"})
+		return
+	}
+
+	queryTypes := parseQueryTypes(c.Query("types"))
+
+	result := h.dns.CheckPropagation(c.Request.Context(), domain.FQDN, queryTypes)
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result, "message": "ok"})
+}
+
+// PropagationByFQDN handles GET /api/v1/dns/propagation?fqdn=example.com
+// Query param: types (comma-separated, default "A,AAAA")
+func (h *DNSQueryHandler) PropagationByFQDN(c *gin.Context) {
+	fqdn := c.Query("fqdn")
+	if fqdn == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 40001, "data": nil, "message": "fqdn query parameter is required"})
+		return
+	}
+
+	queryTypes := parseQueryTypes(c.Query("types"))
+
+	result := h.dns.CheckPropagation(c.Request.Context(), fqdn, queryTypes)
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result, "message": "ok"})
+}
+
+// parseQueryTypes splits a comma-separated types string (e.g. "A,AAAA,MX")
+// into a slice. Returns nil if empty (service will use defaults).
+func parseQueryTypes(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(strings.ToUpper(p))
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }

@@ -98,6 +98,7 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			domains.PUT("/:id/tags", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.TagHandler.SetDomainTags)
 			// DNS record lookup (live query)
 			domains.GET("/:id/dns-records", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.LookupByDomain)
+			domains.GET("/:id/dns-propagation", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.PropagationByDomain)
 		}
 
 		// ── Templates (individual) ─────────────────────────────────────
@@ -219,6 +220,7 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 		dnsLookup := authed.Group("/dns")
 		{
 			dnsLookup.GET("/lookup", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.LookupByFQDN)
+			dnsLookup.GET("/propagation", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.PropagationByFQDN)
 		}
 
 		// ── DNS Providers ─────────────────────────────────────────────
