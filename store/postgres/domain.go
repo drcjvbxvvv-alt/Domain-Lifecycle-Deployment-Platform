@@ -96,6 +96,20 @@ const domainColumns = `id, uuid, project_id, fqdn, lifecycle_state, owner_user_i
 // This is the documented exception to the Transition() rule: there is no
 // nil → requested edge, so the INSERT sets lifecycle_state directly.
 func (s *DomainStore) Create(ctx context.Context, d *Domain) (*Domain, error) {
+	// Ensure JSON array columns are never NULL (DB has NOT NULL constraint).
+	if d.Nameservers == nil {
+		d.Nameservers = json.RawMessage(`[]`)
+	}
+	if d.RegistrantContact == nil {
+		d.RegistrantContact = json.RawMessage(`{}`)
+	}
+	if d.AdminContact == nil {
+		d.AdminContact = json.RawMessage(`{}`)
+	}
+	if d.TechContact == nil {
+		d.TechContact = json.RawMessage(`{}`)
+	}
+
 	var out Domain
 	err := s.db.QueryRowxContext(ctx,
 		`INSERT INTO domains (
