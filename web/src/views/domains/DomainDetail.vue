@@ -7,7 +7,7 @@ import {
   NTabs, NTabPane, NDescriptions, NDescriptionsItem,
   NTimeline, NTimelineItem, NButton, NSpace, NModal, NForm,
   NFormItem, NInput, NInputNumber, NSelect, NSwitch, NDatePicker,
-  NDataTable, NTag, NPopconfirm,
+  NDataTable, NTag, NPopconfirm, NAlert,
   useMessage,
 } from 'naive-ui'
 import { PageHeader, StatusTag, ConfirmModal, PageHint } from '@/components'
@@ -20,7 +20,7 @@ import { useTagStore } from '@/stores/tag'
 import { domainApi } from '@/api/domain'
 import { dnsApi } from '@/api/dns'
 import type { DomainLifecycleHistoryEntry, UpdateDomainAssetRequest } from '@/types/domain'
-import type { DNSRecord, DNSLookupResult, PropagationResult, ResolverResult } from '@/types/dns'
+import type { DNSRecord, DNSLookupResult, PropagationResult, ResolverResult, DriftResult } from '@/types/dns'
 import type { SSLCertResponse } from '@/types/ssl'
 import type { DomainCostResponse, CostType } from '@/types/cost'
 import type { DomainLifecycleState, ApiResponse } from '@/types/common'
@@ -369,6 +369,27 @@ const dnsColumns: DataTableColumns<DNSRecord> = [
   },
 ]
 
+const driftColumns: DataTableColumns<any> = [
+  { title: '狀態', key: 'match', width: 60,
+    render: (row: any): VNodeChild => h('span', {
+      style: `font-size:14px; color:${row.match ? 'var(--success,#18a058)' : 'var(--error,#d03050)'}`,
+    }, row.match ? '✓' : '✗'),
+  },
+  { title: '類型', key: 'type', width: 70,
+    render: (row: any): VNodeChild => h(NTag, { size: 'tiny', bordered: false }, { default: () => row.type }),
+  },
+  { title: '預期 (Provider)', key: 'expected', ellipsis: { tooltip: true },
+    render: (row: any): VNodeChild => row.expected
+      ? h('code', { style: 'font-size:12px' }, row.expected)
+      : h('span', { style: 'color:var(--text-muted)' }, '—'),
+  },
+  { title: '實際 (DNS)', key: 'actual', ellipsis: { tooltip: true },
+    render: (row: any): VNodeChild => row.actual
+      ? h('code', { style: 'font-size:12px' }, row.actual)
+      : h('span', { style: 'color:var(--text-muted)' }, '—'),
+  },
+]
+
 async function handleDNSLookup() {
   dnsLoading.value = true
   try {
@@ -416,6 +437,29 @@ function propRecordSummary(resolver: ResolverResult): string {
       ? `[${r.priority}] ` : ''
     return `${prefix}${r.value}`
   }).join(', ')
+}
+
+// ── Drift check ──────────────────────────────────────────────────────────────
+const driftLoading = ref(false)
+const driftResult  = ref<DriftResult | null>(null)
+
+const driftStatusConfig: Record<string, { label: string; type: string }> = {
+  ok:          { label: '無偏差', type: 'success' },
+  drift:       { label: '偏差',   type: 'error'   },
+  no_expected: { label: '無預期記錄', type: 'warning' },
+  error:       { label: '錯誤',   type: 'error'   },
+}
+
+async function handleDriftCheck() {
+  driftLoading.value = true
+  try {
+    const res = await dnsApi.driftCheck(domainId) as unknown as { data: DriftResult }
+    driftResult.value = res.data
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || 'Drift 檢查失敗')
+  } finally {
+    driftLoading.value = false
+  }
 }
 
 // ── Cost ─────────────────────────────────────────────────────────────────────
@@ -768,6 +812,69 @@ onMounted(async () => {
 
               <div v-else style="padding:24px; text-align:center; color:var(--text-muted); font-size:13px;">
                 選擇記錄類型後點擊「檢測傳播狀態」，同時查詢 Google / Cloudflare / Quad9 / OpenDNS + 權威 NS，比對結果是否一致。
+              </div>
+            </div>
+          </NTabPane>
+
+          <!-- Drift tab -->
+          <NTabPane name="drift" tab="Drift 檢測">
+            <div class="tab-section">
+              <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
+                <NButton
+                  type="primary"
+                  size="small"
+                  :loading="driftLoading"
+                  :disabled="!store.current?.dns_provider_id"
+                  @click="handleDriftCheck"
+                >
+                  檢查 Provider ↔ DNS 偏差
+                </NButton>
+                <span v-if="!store.current?.dns_provider_id" style="font-size:12px; color:var(--text-muted)">
+                  此域名未設定 DNS Provider，無法比對
+                </span>
+                <template v-if="driftResult">
+                  <NTag
+                    :type="(driftStatusConfig[driftResult.status]?.type as any) ?? 'default'"
+                    size="small"
+                    :bordered="false"
+                  >
+                    {{ driftStatusConfig[driftResult.status]?.label ?? driftResult.status }}
+                  </NTag>
+                  <span class="dns-meta">
+                    Provider: {{ driftResult.provider_label }} ({{ driftResult.provider_name }})
+                    ・耗時 {{ driftResult.elapsed_ms }}ms
+                  </span>
+                </template>
+              </div>
+
+              <!-- Error state -->
+              <template v-if="driftResult?.error">
+                <NAlert type="error" style="margin-bottom:12px">
+                  {{ driftResult.error }}
+                </NAlert>
+              </template>
+
+              <!-- Drift records table -->
+              <template v-if="driftResult && driftResult.records && driftResult.records.length > 0">
+                <div class="drift-summary">
+                  <span class="drift-stat good">{{ driftResult.match_count }} 匹配</span>
+                  <span v-if="driftResult.missing_count > 0" class="drift-stat bad">{{ driftResult.missing_count }} 缺失</span>
+                  <span v-if="driftResult.extra_count > 0" class="drift-stat warn">{{ driftResult.extra_count }} 多餘</span>
+                  <span v-if="driftResult.drift_count > 0" class="drift-stat bad">{{ driftResult.drift_count }} 偏差</span>
+                </div>
+                <NDataTable
+                  :columns="driftColumns"
+                  :data="driftResult.records"
+                  :row-key="(r: any) => `${r.type}-${r.expected}-${r.actual}`"
+                  size="small"
+                  :max-height="400"
+                  striped
+                />
+              </template>
+
+              <div v-else-if="!driftResult" style="padding:24px; text-align:center; color:var(--text-muted); font-size:13px;">
+                比對 DNS Provider API（期望記錄）與實際 DNS 解析結果，偵測偏差。<br>
+                需先在域名設定中綁定 DNS Provider（Cloudflare 等）。
               </div>
             </div>
           </NTabPane>
@@ -1140,6 +1247,18 @@ onMounted(async () => {
   color: var(--text-muted);
   white-space: nowrap;
 }
+
+/* ── Drift ───────────────────────────────────────────────────────────────── */
+.drift-summary {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.drift-stat.good { color: var(--success, #18a058); }
+.drift-stat.bad  { color: var(--error,   #d03050); }
+.drift-stat.warn { color: var(--warning, #f0a020); }
 
 .dns-meta {
   font-size: 12px;

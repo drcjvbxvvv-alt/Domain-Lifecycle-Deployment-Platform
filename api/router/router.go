@@ -99,6 +99,7 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			// DNS record lookup (live query)
 			domains.GET("/:id/dns-records", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.LookupByDomain)
 			domains.GET("/:id/dns-propagation", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.PropagationByDomain)
+			domains.GET("/:id/dns-drift", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.DriftCheck)
 		}
 
 		// ── Templates (individual) ─────────────────────────────────────

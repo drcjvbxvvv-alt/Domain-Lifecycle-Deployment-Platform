@@ -41,3 +41,32 @@ export interface PropagationResult {
   queried_at: string
   total_ms: number
 }
+
+// ── Drift detection types ────────────────────────────────────────────────────
+
+export type DriftStatus = 'ok' | 'drift' | 'no_expected' | 'error'
+
+export interface DriftRecord {
+  type: string
+  name: string
+  expected?: string
+  actual?: string
+  match: boolean
+}
+
+export interface DriftResult {
+  fqdn: string
+  provider_name: string
+  provider_label: string
+  status: DriftStatus
+  records: DriftRecord[]
+  expected_count: number
+  actual_count: number
+  match_count: number
+  drift_count: number
+  missing_count: number
+  extra_count: number
+  queried_at: string
+  elapsed_ms: number
+  error?: string
+}

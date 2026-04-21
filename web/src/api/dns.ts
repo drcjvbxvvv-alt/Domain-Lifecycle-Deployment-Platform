@@ -1,6 +1,6 @@
 import { http } from '@/utils/http'
 import type { ApiResponse } from '@/types/common'
-import type { DNSLookupResult, PropagationResult } from '@/types/dns'
+import type { DNSLookupResult, PropagationResult, DriftResult } from '@/types/dns'
 
 export const dnsApi = {
   /** Look up DNS records for a domain in the database by its ID. */
@@ -21,5 +21,10 @@ export const dnsApi = {
   /** Check DNS propagation for any arbitrary FQDN. */
   propagationByFQDN(fqdn: string, types?: string): Promise<ApiResponse<PropagationResult>> {
     return http.get('/dns/propagation', { params: { fqdn, ...(types ? { types } : {}) } })
+  },
+
+  /** Check drift between DNS provider (expected) and live DNS (actual). */
+  driftCheck(domainId: number): Promise<ApiResponse<DriftResult>> {
+    return http.get(`/domains/${domainId}/dns-drift`)
   },
 }

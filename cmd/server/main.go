@@ -134,7 +134,7 @@ func main() {
 	importHandler := handler.NewImportHandler(importSvc, logger)
 
 	dnsQuerySvc := dnsquery.NewService("", logger) // "" = auto-detect system resolver
-	dnsQueryHandler := handler.NewDNSQueryHandler(dnsQuerySvc, lifecycleSvc, logger)
+	dnsQueryHandler := handler.NewDNSQueryHandler(dnsQuerySvc, lifecycleSvc, dnsProviderStore, logger)
 
 	// ── Management API listener (:8080, JWT auth) ──────────────────────────
 	mgmtRouter := buildManagementRouter(logger, router.Deps{
