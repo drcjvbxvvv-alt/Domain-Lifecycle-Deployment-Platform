@@ -13,9 +13,11 @@ import (
 
 	"domain-platform/internal/artifact"
 	"domain-platform/internal/bootstrap"
+	domainsvc "domain-platform/internal/domain"
 	"domain-platform/internal/release"
 	sslsvc "domain-platform/internal/ssl"
 	"domain-platform/internal/tasks"
+	"domain-platform/pkg/notify"
 	pkgstorage "domain-platform/pkg/storage"
 	"domain-platform/store/postgres"
 )
@@ -58,6 +60,22 @@ func main() {
 	sslService := sslsvc.NewService(sslCertStore, domainStore, logger)
 	sslCheckHandler := sslsvc.NewHandleCheckExpiry(sslService, logger)
 	sslCheckAllHandler := sslsvc.NewHandleCheckAllActive(sslService, logger)
+
+	// Domain expiry check + notification
+	expirySvc := domainsvc.NewExpiryService(domainStore, logger)
+	// Build notifier chain from config (Telegram + Webhook). Falls back to Noop.
+	var notifier notify.Notifier = notify.NewNoop()
+	if cfg.Telegram.BotToken != "" && cfg.Telegram.ChatID != "" {
+		tg := notify.NewTelegram(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
+		if cfg.Webhook.URL != "" {
+			notifier = notify.NewMulti(tg, notify.NewWebhook(cfg.Webhook.URL))
+		} else {
+			notifier = tg
+		}
+	} else if cfg.Webhook.URL != "" {
+		notifier = notify.NewWebhook(cfg.Webhook.URL)
+	}
+	expiryCheckHandler := domainsvc.NewHandleExpiryCheck(expirySvc, notifier, logger)
 	templateStore := postgres.NewTemplateStore(db)
 	agentStore := postgres.NewAgentStore(db)
 	releaseStore := postgres.NewReleaseStore(db)
@@ -100,6 +118,7 @@ func main() {
 	mux.Handle(tasks.TypeArtifactBuild, artifactBuildHandler)
 	mux.Handle(tasks.TypeSSLCheckExpiry, sslCheckHandler)
 	mux.Handle(tasks.TypeSSLCheckAllActive, sslCheckAllHandler)
+	mux.Handle(tasks.TypeDomainExpiryCheck, expiryCheckHandler)
 
 	// ── Stub handlers (log payload, return nil) ───────────────────────────
 	// These will be replaced by real implementations in P2+.

@@ -875,6 +875,8 @@ mass-updating domain properties.
 
 ### PA.7 — Expiry Dashboard + Notifications **(Opus)**
 
+**Status**: ✅ COMPLETED 2026-04-21
+
 **Owner**: **Opus** — correctness-critical (expiry alerts must not miss or spam)
 **Depends on**: PA.3 (domain expiry data), PA.4 (SSL cert expiry data)
 **Reads first**: `docs/analysis/UPTIME_KUMA_ANALYSIS.md` §4 "Notification
@@ -953,6 +955,63 @@ first real use of the notification system.
 - Calendar shows dots on days with expirations
 - `go test -race ./internal/domain/...` passes
 - Worker idempotent: running twice in same day → no duplicate notifications
+
+**Delivered (2026-04-21)**:
+
+- `internal/tasks/types.go` — Added `TypeDomainExpiryCheck = "domain:expiry_check"`
+- `internal/bootstrap/asynq.go` — Added queue mappings for `domain:expiry_check`,
+  `ssl:check_expiry`, `ssl:check_all_active` → "default" queue
+- `internal/domain/expiry.go` — Core logic:
+  - `ComputeExpiryStatus(expiryDate, graceEndDate, now)` — pure function returning
+    nil (ok), "expiring\_90d", "expiring\_30d", "expiring\_7d", "expired", or "grace";
+    matches DB CHECK constraint exactly; nil → SQL NULL
+  - `SeverityForStatus` — maps expiry status to notification severity
+    (info/warning/urgent/critical)
+  - `ExpiryService.CheckAllExpiry(ctx)` — iterates all non-retired domains with
+    expiry\_date, computes new status, compares with stored `expiry_status`, persists
+    changes via `UpdateExpiryStatus`, returns `ExpiryCheckResult` with list of
+    `ExpiryStateChange` (domainID, fqdn, old/new status, expiry date); idempotent
+    by design (second run in same day = zero changes)
+  - `ExpiryService.GetDashboardData(ctx)` — returns per-band counts + 90-day calendar
+  - `daysUntil` — ceiling-based days calculation
+  - `statusEqual` — nil-safe string pointer comparison
+- `internal/domain/expiry_test.go` — 23 test cases across 5 test functions:
+  - `TestComputeExpiryStatus` — 18 sub-cases: nil expiry, 365d/91d (ok), 90d/89d/31d
+    (expiring\_90d), 30d/29d/8d (expiring\_30d), 7d/6d/1d (expiring\_7d), 0d/-1d/-30d
+    (expired), grace period (in/at/last/ended); 3 explicit acceptance criteria from
+    task card (25d → expiring\_30d, -2d → expired, -2d+grace\_28d → grace)
+  - `TestSeverityForStatus` — 6 cases (nil + 5 status values)
+  - `TestStatusEqual` — 5 nil/non-nil/mismatch combinations
+  - `TestDaysUntil` — 5 boundary cases (24h, 12h, 0h, -1h, 30d)
+  - `TestComputeExpiryStatusBoundary` — 4 edge cases (same day midnight, 1s future,
+    grace 1s expired, grace also expired)
+- `internal/domain/task.go` — `HandleExpiryCheck` asynq handler:
+  - Calls `CheckAllExpiry`, groups changes by new status band
+  - Batches notification per band (Critical Rule #8: N domains in one message)
+  - Message format: emoji + Chinese subject + bullet list of changed domains
+  - Natural dedup: only notifies on STATUS CHANGES — idempotent on second run
+- `pkg/notify/notify.go` — `Notifier` interface (`Send(ctx, Message) error`,
+  `Name() string`), `Message` struct (Subject/Body/Severity), `Multi` fan-out
+- `pkg/notify/telegram.go` — Telegram Bot API sender (Markdown v1, 10s timeout,
+  `escapeMarkdown` for special chars)
+- `pkg/notify/webhook.go` — generic JSON POST sender (subject/body/severity, 10s timeout)
+- `pkg/notify/noop.go` — no-op for dev/test
+- `api/handler/expiry.go` — `ExpiryHandler.Dashboard` — `GET /api/v1/dashboard/expiry`
+- `api/router/router.go` — registered `/dashboard/expiry` route; `ExpiryHandler` in Deps
+- `cmd/server/main.go` — wired `ExpiryService → ExpiryHandler`
+- `cmd/worker/main.go` — wired `ExpiryService + Notifier → HandleExpiryCheck`;
+  notifier chain built from config (Telegram + Webhook fallback to Noop)
+- `web/src/types/expiry.ts` — `ExpiryBand`, `CalendarEntry`, `ExpiryDashboardData`,
+  `BAND_CONFIG` (label + color + emoji per status)
+- `web/src/api/expiry.ts` — `expiryApi.dashboard()`
+- `web/src/views/dashboard/ExpiryDashboard.vue` — 5-band card grid (NCard + NStatistic,
+  colour-coded top border, hover effect), total count bar, 90-day calendar entries
+- `web/src/views/domains/DomainList.vue` — updated `expiryStatusOptions` to match
+  DB CHECK constraint values (expiring\_90d/30d/7d, expired, grace)
+- `web/src/router/index.ts` — added `/dashboard/expiry` route
+- `web/src/views/layouts/MainLayout.vue` — added "到期總覽" as top sidebar entry
+- `go build ./...` passes; `go test ./internal/domain/...` 23 tests pass;
+  `npm run build` zero errors
 
 ---
 

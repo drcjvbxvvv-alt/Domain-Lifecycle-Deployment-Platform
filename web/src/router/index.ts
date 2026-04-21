@@ -29,6 +29,12 @@ const router = createRouter({
           component: () => import('@/views/DashboardView.vue'),
           meta: { title: 'Dashboard', minRole: 'viewer' },
         },
+        {
+          path: 'dashboard/expiry',
+          name: 'ExpiryDashboard',
+          component: () => import('@/views/dashboard/ExpiryDashboard.vue'),
+          meta: { title: '到期總覽', minRole: 'viewer' },
+        },
 
         // ── Projects ──────────────────────────────────────────
         {

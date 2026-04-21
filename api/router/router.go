@@ -23,6 +23,7 @@ type Deps struct {
 	SSLHandler         *handler.SSLHandler
 	CostHandler        *handler.CostHandler
 	TagHandler         *handler.TagHandler
+	ExpiryHandler      *handler.ExpiryHandler
 	JWTManager         *auth.JWTManager
 }
 
@@ -40,6 +41,12 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 	authed := v1.Group("", middleware.JWTAuth(deps.JWTManager))
 	{
 		authed.GET("/auth/me", deps.AuthHandler.Me)
+
+		// ── Dashboard ─────────────────────────────────────────────────
+		dashboard := authed.Group("/dashboard")
+		{
+			dashboard.GET("/expiry", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ExpiryHandler.Dashboard)
+		}
 
 		// ── Projects ──────────────────────────────────────────────────
 		projects := authed.Group("/projects")

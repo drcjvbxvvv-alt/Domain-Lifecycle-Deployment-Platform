@@ -61,10 +61,11 @@ const stateOptions: SelectOption[] = [
 ]
 
 const expiryStatusOptions: SelectOption[] = [
-  { label: 'ok',            value: 'ok'            },
-  { label: 'expiring_soon', value: 'expiring_soon' },
-  { label: 'expired',       value: 'expired'       },
-  { label: 'grace',         value: 'grace'         },
+  { label: '90 天內到期', value: 'expiring_90d' },
+  { label: '30 天內到期', value: 'expiring_30d' },
+  { label: '7 天內到期',  value: 'expiring_7d'  },
+  { label: '已過期',      value: 'expired'       },
+  { label: 'Grace',       value: 'grace'         },
 ]
 
 const selectedProjectName = computed(() => {

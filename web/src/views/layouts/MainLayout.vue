@@ -24,6 +24,12 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
+    groupLabel: '總覽',
+    items: [
+      { label: '到期總覽',   key: '/dashboard/expiry', icon: 'clock'    },
+    ],
+  },
+  {
     groupLabel: '業務管理',
     items: [
       { label: '專案管理',   key: '/projects', icon: 'folder'   },

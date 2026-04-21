@@ -41,6 +41,9 @@ var QueueForTask = map[string]string{
 	// default
 	"notify:send":            "default",
 	"agent:upgrade_dispatch": "default",
+	"domain:expiry_check":    "default",
+	"ssl:check_expiry":       "default",
+	"ssl:check_all_active":   "default",
 }
 
 // NewAsynqClient returns an asynq.Client connected to Redis.

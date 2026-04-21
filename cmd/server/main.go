@@ -21,6 +21,7 @@ import (
 	"domain-platform/internal/auth"
 	"domain-platform/internal/bootstrap"
 	costsvc "domain-platform/internal/cost"
+	domainsvc "domain-platform/internal/domain"
 	"domain-platform/internal/dnsprovider"
 	"domain-platform/internal/lifecycle"
 	"domain-platform/internal/project"
@@ -123,6 +124,9 @@ func main() {
 	tagSvc := tagsvc.NewService(tagStore, domainStore, logger)
 	tagHandler := handler.NewTagHandler(tagSvc, logger)
 
+	expirySvc := domainsvc.NewExpiryService(domainStore, logger)
+	expiryHandler := handler.NewExpiryHandler(expirySvc, logger)
+
 	// ── Management API listener (:8080, JWT auth) ──────────────────────────
 	mgmtRouter := buildManagementRouter(logger, router.Deps{
 		AuthHandler:        authHandler,
@@ -138,6 +142,7 @@ func main() {
 		SSLHandler:         sslHandler,
 		CostHandler:        costHandler,
 		TagHandler:         tagHandler,
+		ExpiryHandler:      expiryHandler,
 		JWTManager:         jwtMgr,
 	})
 	mgmtAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
