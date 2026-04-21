@@ -135,7 +135,7 @@ func main() {
 	importHandler := handler.NewImportHandler(importSvc, logger)
 
 	dnsQuerySvc := dnsquery.NewService("", logger) // "" = auto-detect system resolver
-	dnsQueryHandler := handler.NewDNSQueryHandler(dnsQuerySvc, lifecycleSvc, dnsProviderStore, logger)
+	dnsQueryHandler := handler.NewDNSQueryHandler(dnsQuerySvc, lifecycleSvc, dnsProviderStore, asynqClient, logger)
 
 	dnsRecordSvc := dnsrecsvc.NewService(dnsProviderStore, domainStore, logger)
 	dnsRecordHandler := handler.NewDNSRecordHandler(dnsRecordSvc, lifecycleSvc, logger)

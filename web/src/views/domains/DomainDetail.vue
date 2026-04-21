@@ -20,7 +20,7 @@ import { useTagStore } from '@/stores/tag'
 import { domainApi } from '@/api/domain'
 import { dnsApi } from '@/api/dns'
 import type { DomainLifecycleHistoryEntry, UpdateDomainAssetRequest } from '@/types/domain'
-import type { DNSRecord, DNSLookupResult, PropagationResult, ResolverResult, DriftResult, ProviderRecord, CreateProviderRecordRequest } from '@/types/dns'
+import type { DNSRecord, DNSLookupResult, PropagationResult, DriftResult, ProviderRecord, CreateProviderRecordRequest } from '@/types/dns'
 import type { SSLCertResponse } from '@/types/ssl'
 import type { DomainCostResponse, CostType } from '@/types/cost'
 import type { DomainLifecycleState, ApiResponse } from '@/types/common'
@@ -465,7 +465,7 @@ async function handleProvDelete(recordId: string) {
 
 const provColumns: DataTableColumns<ProviderRecord> = [
   { title: '類型', key: 'type', width: 70,
-    render: (row): VNodeChild => h(NTag, { type: dnsRecordTypeColor[row.type] || 'default', size: 'small', bordered: false }, { default: () => row.type }),
+    render: (row): VNodeChild => h(NTag, { type: (dnsRecordTypeColor[row.type] || 'default') as any, size: 'small', bordered: false }, { default: () => row.type }),
   },
   { title: '名稱', key: 'name', ellipsis: { tooltip: true }, minWidth: 160 },
   { title: '值', key: 'content', ellipsis: { tooltip: true }, minWidth: 160,
@@ -516,19 +516,11 @@ async function handlePropagationCheck() {
   }
 }
 
-function propRecordSummary(resolver: ResolverResult): string {
-  if (resolver.error) return `錯誤: ${resolver.error}`
-  if (!resolver.records || resolver.records.length === 0) return '（無記錄）'
-  return resolver.records.map(r => {
-    const prefix = (r.type === 'MX' || r.type === 'SRV') && r.priority !== undefined
-      ? `[${r.priority}] ` : ''
-    return `${prefix}${r.value}`
-  }).join(', ')
-}
 
 // ── Drift check ──────────────────────────────────────────────────────────────
 const driftLoading = ref(false)
 const driftResult  = ref<DriftResult | null>(null)
+const driftAllLoading = ref(false)
 
 const driftStatusConfig: Record<string, { label: string; type: string }> = {
   ok:          { label: '無偏差', type: 'success' },
@@ -546,6 +538,18 @@ async function handleDriftCheck() {
     message.error(e?.response?.data?.message || 'Drift 檢查失敗')
   } finally {
     driftLoading.value = false
+  }
+}
+
+async function handleTriggerDriftCheckAll() {
+  driftAllLoading.value = true
+  try {
+    await dnsApi.triggerDriftCheckAll()
+    message.success('全域 Drift 巡檢已加入排程（約 30 秒內執行）')
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || '觸發失敗')
+  } finally {
+    driftAllLoading.value = false
   }
 }
 
@@ -929,7 +933,7 @@ onMounted(async () => {
                         :key="idx"
                         class="prop-record"
                       >
-                        <NTag :type="dnsRecordTypeColor[rec.type] || 'default'" size="tiny" :bordered="false">{{ rec.type }}</NTag>
+                        <NTag :type="(dnsRecordTypeColor[rec.type] || 'default') as any" size="tiny" :bordered="false">{{ rec.type }}</NTag>
                         <code class="prop-record__value">{{ rec.value }}</code>
                         <span class="prop-record__ttl">TTL {{ rec.ttl }}s</span>
                       </div>
@@ -958,8 +962,18 @@ onMounted(async () => {
                 >
                   檢查 Provider ↔ DNS 偏差
                 </NButton>
+                <NButton
+                  size="small"
+                  :loading="driftAllLoading"
+                  @click="handleTriggerDriftCheckAll"
+                >
+                  觸發全域巡檢
+                </NButton>
                 <span v-if="!store.current?.dns_provider_id" style="font-size:12px; color:var(--text-muted)">
                   此域名未設定 DNS Provider，無法比對
+                </span>
+                <span style="font-size:12px; color:var(--text-muted)">
+                  排程巡檢：每 30 分鐘自動掃描所有有 Provider 的域名，偏差時推送告警
                 </span>
                 <template v-if="driftResult">
                   <NTag

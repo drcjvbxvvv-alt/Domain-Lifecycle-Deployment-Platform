@@ -49,4 +49,9 @@ export const dnsApi = {
   deleteProviderRecord(domainId: number, recordId: string): Promise<ApiResponse<null>> {
     return http.delete(`/domains/${domainId}/provider-records/${recordId}`)
   },
+
+  /** Manually trigger a DNS drift check across all active domains with a provider configured. */
+  triggerDriftCheckAll(): Promise<ApiResponse<{ task_id: string; queue: string }>> {
+    return http.post('/dns/drift-check-all')
+  },
 }

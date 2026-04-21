@@ -1,15 +1,19 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
 
 	"domain-platform/internal/dnsquery"
 	"domain-platform/internal/lifecycle"
+	"domain-platform/internal/tasks"
 	"domain-platform/store/postgres"
 )
 
@@ -18,12 +22,13 @@ type DNSQueryHandler struct {
 	dns          *dnsquery.Service
 	lifecycle    *lifecycle.Service
 	dnsProviders *postgres.DNSProviderStore
+	asynqClient  *asynq.Client
 	logger       *zap.Logger
 }
 
 // NewDNSQueryHandler constructs a DNSQueryHandler.
-func NewDNSQueryHandler(dns *dnsquery.Service, lifecycle *lifecycle.Service, dnsProviders *postgres.DNSProviderStore, logger *zap.Logger) *DNSQueryHandler {
-	return &DNSQueryHandler{dns: dns, lifecycle: lifecycle, dnsProviders: dnsProviders, logger: logger}
+func NewDNSQueryHandler(dns *dnsquery.Service, lifecycle *lifecycle.Service, dnsProviders *postgres.DNSProviderStore, asynqClient *asynq.Client, logger *zap.Logger) *DNSQueryHandler {
+	return &DNSQueryHandler{dns: dns, lifecycle: lifecycle, dnsProviders: dnsProviders, asynqClient: asynqClient, logger: logger}
 }
 
 // LookupByDomain handles GET /api/v1/domains/:id/dns-records
@@ -127,6 +132,32 @@ func (h *DNSQueryHandler) DriftCheck(c *gin.Context) {
 	result := h.dns.CheckDrift(c.Request.Context(), domain, provider)
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result, "message": "ok"})
+}
+
+// TriggerDriftCheckAll handles POST /api/v1/dns/drift-check-all
+// Manually enqueues a TypeDNSDriftCheckAll task for immediate execution.
+// The scheduled task also runs automatically every 30 minutes via the worker scheduler.
+func (h *DNSQueryHandler) TriggerDriftCheckAll(c *gin.Context) {
+	payload, _ := json.Marshal(tasks.DNSDriftCheckAllPayload{})
+	task := asynq.NewTask(tasks.TypeDNSDriftCheckAll, payload,
+		asynq.Queue("default"),
+		asynq.MaxRetry(1),
+		asynq.Timeout(5*time.Minute),
+	)
+
+	info, err := h.asynqClient.EnqueueContext(c.Request.Context(), task)
+	if err != nil {
+		h.logger.Error("enqueue dns:drift_check_all", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 50001, "data": nil, "message": "failed to enqueue drift check"})
+		return
+	}
+
+	h.logger.Info("dns:drift_check_all enqueued manually", zap.String("task_id", info.ID))
+	c.JSON(http.StatusAccepted, gin.H{
+		"code":    0,
+		"data":    gin.H{"task_id": info.ID, "queue": info.Queue},
+		"message": "drift check enqueued",
+	})
 }
 
 // parseQueryTypes splits a comma-separated types string (e.g. "A,AAAA,MX")

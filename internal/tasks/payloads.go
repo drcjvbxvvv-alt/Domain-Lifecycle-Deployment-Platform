@@ -104,6 +104,21 @@ type DomainImportPayload struct {
 	JobID int64 `json:"job_id"`
 }
 
+// ── DNS Drift ─────────────────────────────────────────────────────────────────
+
+// DNSDriftCheckAllPayload is the payload for TypeDNSDriftCheckAll.
+// Empty — the handler scans all active domains that have a dns_provider_id set.
+type DNSDriftCheckAllPayload struct{}
+
+// DNSDriftCheckPayload is the payload for TypeDNSDriftCheck.
+// Carries the domain + provider identifiers needed to run one drift check.
+type DNSDriftCheckPayload struct {
+	DomainID      int64  `json:"domain_id"`
+	DomainUUID    string `json:"domain_uuid"`
+	FQDN          string `json:"fqdn"`
+	DNSProviderID int64  `json:"dns_provider_id"`
+}
+
 // ── Notify ────────────────────────────────────────────────────────────────────
 
 // NotifySendPayload is the payload for TypeNotifySend.

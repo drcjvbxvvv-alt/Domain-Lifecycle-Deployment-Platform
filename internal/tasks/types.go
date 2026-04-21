@@ -37,6 +37,10 @@ const (
 	// Domain import
 	TypeDomainImport = "domain:import" // process a domain_import_jobs row row-by-row
 
+	// DNS drift monitoring
+	TypeDNSDriftCheckAll = "dns:drift_check_all" // batch: enqueue TypeDNSDriftCheck per active domain with provider
+	TypeDNSDriftCheck    = "dns:drift_check"     // single domain: run drift check, alert on deviation
+
 	// Notify
 	TypeNotifySend = "notify:send"
 )

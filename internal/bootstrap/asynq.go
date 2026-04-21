@@ -44,6 +44,8 @@ var QueueForTask = map[string]string{
 	"domain:expiry_check":    "default",
 	"ssl:check_expiry":       "default",
 	"ssl:check_all_active":   "default",
+	"dns:drift_check_all":    "default",
+	"dns:drift_check":        "default",
 }
 
 // NewAsynqClient returns an asynq.Client connected to Redis.

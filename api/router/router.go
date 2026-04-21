@@ -228,6 +228,7 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 		{
 			dnsLookup.GET("/lookup", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.LookupByFQDN)
 			dnsLookup.GET("/propagation", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.DNSQueryHandler.PropagationByFQDN)
+			dnsLookup.POST("/drift-check-all", middleware.RequireAnyRole("operator", "release_manager", "admin"), deps.DNSQueryHandler.TriggerDriftCheckAll)
 		}
 
 		// ── DNS Providers ─────────────────────────────────────────────

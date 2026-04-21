@@ -14,6 +14,7 @@ import (
 	"domain-platform/internal/artifact"
 	"domain-platform/internal/bootstrap"
 	domainsvc "domain-platform/internal/domain"
+	"domain-platform/internal/dnsquery"
 	importsvc "domain-platform/internal/importer"
 	"domain-platform/internal/lifecycle"
 	"domain-platform/internal/release"
@@ -94,6 +95,12 @@ func main() {
 	asynqClient := bootstrap.NewAsynqClient(cfg.Redis)
 	defer asynqClient.Close()
 
+	// DNS drift monitoring
+	dnsQuerySvc := dnsquery.NewService("", logger) // "" = auto-detect system resolver
+	dnsProviderStore := postgres.NewDNSProviderStore(db)
+	driftCheckAllHandler := dnsquery.NewHandleDriftCheckAll(domainStore, asynqClient, logger)
+	driftCheckHandler := dnsquery.NewHandleDriftCheck(dnsQuerySvc, domainStore, dnsProviderStore, notifier, rdb, logger)
+
 	lifecycleStore := postgres.NewLifecycleStore(db)
 	lifecycleSvc := lifecycle.NewService(domainStore, lifecycleStore, logger)
 	importJobStore := postgres.NewImportJobStore(db)
@@ -127,6 +134,8 @@ func main() {
 	mux.Handle(tasks.TypeSSLCheckAllActive, sslCheckAllHandler)
 	mux.Handle(tasks.TypeDomainExpiryCheck, expiryCheckHandler)
 	mux.HandleFunc(tasks.TypeDomainImport, importSvc.HandleDomainImport)
+	mux.Handle(tasks.TypeDNSDriftCheckAll, driftCheckAllHandler)
+	mux.Handle(tasks.TypeDNSDriftCheck, driftCheckHandler)
 
 	// ── Stub handlers (log payload, return nil) ───────────────────────────
 	// These will be replaced by real implementations in P2+.
@@ -156,6 +165,26 @@ func main() {
 	mux.HandleFunc(tasks.TypeProbeRunL3, stubFor(tasks.TypeProbeRunL3))
 	mux.HandleFunc(tasks.TypeNotifySend, stubFor(tasks.TypeNotifySend))
 
+	// ── Periodic scheduler ────────────────────────────────────────────────────
+	// Uses asynq.Scheduler to enqueue recurring tasks at fixed intervals.
+	// The scheduler runs in a separate goroutine alongside the worker server.
+	scheduler := asynq.NewScheduler(
+		asynq.RedisClientOpt{
+			Addr:     cfg.Redis.Addr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		},
+		&asynq.SchedulerOpts{},
+	)
+
+	// DNS drift check: every 30 minutes.
+	// The batch task enqueues one TypeDNSDriftCheck per active domain with a provider.
+	driftPayload, _ := json.Marshal(tasks.DNSDriftCheckAllPayload{})
+	driftTask := asynq.NewTask(tasks.TypeDNSDriftCheckAll, driftPayload, asynq.Queue("default"))
+	if _, err := scheduler.Register("@every 30m", driftTask); err != nil {
+		logger.Fatal("register dns drift scheduler", zap.Error(err))
+	}
+
 	logger.Info("worker starting",
 		zap.String("redis", cfg.Redis.Addr),
 		zap.Int("concurrency", bootstrap.DefaultWorkerConcurrency),
@@ -173,8 +202,15 @@ func main() {
 		}
 	}()
 
+	go func() {
+		if err := scheduler.Run(); err != nil {
+			logger.Fatal("scheduler run error", zap.Error(err))
+		}
+	}()
+
 	<-quit
 	logger.Info("shutdown signal received — draining worker")
+	scheduler.Shutdown()
 	srv.Shutdown()
 	logger.Info("worker exited cleanly")
 }

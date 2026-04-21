@@ -224,6 +224,21 @@ func (s *DomainStore) ListActiveByProject(ctx context.Context, projectID int64) 
 	return domains, nil
 }
 
+// ListActiveWithDNSProvider returns all active domains that have a dns_provider_id set.
+// Used by the DNS drift monitor to identify domains that need periodic drift checks.
+func (s *DomainStore) ListActiveWithDNSProvider(ctx context.Context) ([]Domain, error) {
+	var domains []Domain
+	err := s.db.SelectContext(ctx, &domains,
+		`SELECT `+domainColumns+`
+		 FROM domains
+		 WHERE lifecycle_state = 'active' AND dns_provider_id IS NOT NULL AND deleted_at IS NULL
+		 ORDER BY id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list active domains with dns provider: %w", err)
+	}
+	return domains, nil
+}
+
 // UpdateAssetFields updates the domain's asset-related columns.
 // Does NOT touch lifecycle_state (that goes through LifecycleStore.TransitionTx).
 func (s *DomainStore) UpdateAssetFields(ctx context.Context, d *Domain) error {
