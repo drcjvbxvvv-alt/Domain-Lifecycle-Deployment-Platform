@@ -1,4 +1,4 @@
-# PHASE_C_TASKLIST.md — Monitoring & Alerting Work Order
+# PHASE_C_TASKLIST.md — Monitoring & Alerting Work Order (PC.1 ✅ PC.2 ✅)
 
 > **Created 2026-04-21.** This document is the authoritative work order for
 > Phase C (Monitoring & Alerting) of the platform restructuring.
@@ -102,6 +102,7 @@ work.
 
 **Owner**: **Opus** — probe correctness determines everything downstream
 (false positives = alert fatigue, false negatives = missed outages)
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: Phase A (domain inventory with lifecycle_state), Phase 1-2
 (release pipeline for L2 verification)
 **Reads first**: `ARCHITECTURE.md` §2.7 "Probe Subsystem",
@@ -266,6 +267,7 @@ in TimescaleDB, detect state changes.
 
 **Owner**: **Opus** — alert correctness is critical (missed alert = outage
 undetected; over-alerting = operator fatigue = alerts ignored)
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: PC.1 (state changes trigger alerts), PC.6 (notification dispatch)
 **Reads first**: `CLAUDE.md` Critical Rule #8, `docs/analysis/UPTIME_KUMA_ANALYSIS.md`
 §4 "Notification Architecture", `ARCHITECTURE.md` §2.8 "Alert & Notification"
@@ -391,6 +393,7 @@ and dispatches notifications through the configured channels.
 ### PC.3 — Public Status Page
 
 **Owner**: Sonnet
+**Status**: 🔲 NOT STARTED
 **Depends on**: PC.1 (probe data for uptime bars), PC.2 (alert status for
 current state display)
 **Reads first**: `docs/analysis/UPTIME_KUMA_ANALYSIS.md` §4 "Status Page Model"
@@ -525,6 +528,7 @@ history; incidents communicate ongoing issues.
 ### PC.4 — Maintenance Windows
 
 **Owner**: Sonnet
+**Status**: 🔲 NOT STARTED
 **Depends on**: PC.2 (alert engine — maintenance suppresses alerts)
 **Reads first**: `docs/analysis/UPTIME_KUMA_ANALYSIS.md` §7 "Maintenance Model"
 
@@ -631,6 +635,7 @@ suppress alerts and show correct status on public pages.
 ### PC.5 — Uptime Dashboard
 
 **Owner**: Sonnet
+**Status**: 🔲 NOT STARTED
 **Depends on**: PC.1 (probe data must be accumulating)
 **Reads first**: `docs/analysis/UPTIME_KUMA_ANALYSIS.md` §6 "Uptime Calculation"
 
@@ -736,6 +741,7 @@ patterns. TimescaleDB continuous aggregates provide efficient queries.
 ### PC.6 — Notification Hub
 
 **Owner**: Sonnet
+**Status**: 🔲 NOT STARTED
 **Depends on**: Phase A (basic `pkg/notify` exists with Telegram + Webhook)
 **Reads first**: `docs/analysis/UPTIME_KUMA_ANALYSIS.md` §3 "Notification
 Architecture"

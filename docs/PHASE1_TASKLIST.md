@@ -1,4 +1,4 @@
-# PHASE1_TASKLIST.md — Phase 1 Work Order
+# PHASE1_TASKLIST.md — Phase 1 Work Order (完成)
 
 > **Aligned with PRD + ADR-0003 (2026-04-09).** This document is the
 > authoritative work order for Phase 1 of the Domain Lifecycle & Deployment

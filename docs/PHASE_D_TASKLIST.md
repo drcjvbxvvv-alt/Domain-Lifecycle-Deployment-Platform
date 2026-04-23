@@ -1,4 +1,4 @@
-# PHASE_D_TASKLIST.md — GFW Detection & Auto-Failover Work Order
+# PHASE_D_TASKLIST.md — GFW Detection & Auto-Failover Work Order (PD.1 ✅)
 
 > **Created 2026-04-21.** This document is the authoritative work order for
 > Phase D (GFW Detection) of the platform restructuring.
@@ -110,6 +110,7 @@ optionally trigger automatic DNS failover to backup infrastructure.
 **Owner**: **Opus** — security-sensitive binary deployed to untrusted networks;
 must be minimal, hardened, and structurally constrained (same philosophy as
 `cmd/agent`)
+**Status**: ✅ COMPLETED 2026-04-23
 **Depends on**: Phase C (PC.1 probe infrastructure, PC.6 notification hub)
 **Reads first**: `docs/analysis/OONI_PROBE_ANALYSIS.md` §1 "Architecture",
 `CLAUDE.md` Critical Rule #3 (agent whitelist philosophy applies to probe nodes),
@@ -234,6 +235,7 @@ They NEVER hold credentials for DNS/CDN providers or make operational changes.
 
 **Owner**: **Opus** — detection logic determines all downstream decisions;
 false negatives miss blocking, false positives trigger unnecessary failovers
+**Status**: 🔲 NOT STARTED
 **Depends on**: PD.1 (probe nodes reporting raw measurement data)
 **Reads first**: `docs/analysis/OONI_PROBE_ANALYSIS.md` §5 "Blocking Detection
 Logic", §6 "GFW-Specific Detection Patterns"
@@ -382,6 +384,7 @@ result storage on the control plane side.
 
 **Owner**: **Opus** — the analysis logic that determines "blocked" vs
 "accessible" — must handle CDN variation, transient failures, and real blocking
+**Status**: 🔲 NOT STARTED
 **Depends on**: PD.2 (measurements from both probe + control nodes)
 **Reads first**: `docs/analysis/OONI_PROBE_ANALYSIS.md` §5 "Blocking Detection
 Logic" (exact decision tree)
@@ -530,6 +533,7 @@ implements the OONI-style comparison engine.
 
 **Owner**: **Opus** — alerting on blocking events triggers operational response;
 must not false-alarm but must not miss real blocks
+**Status**: 🔲 NOT STARTED
 **Depends on**: PD.3 (verdicts with confidence scoring), Phase C PC.2 (alert engine)
 **Reads first**: `CLAUDE.md` Critical Rule #8
 
@@ -616,6 +620,7 @@ across all CN-facing domains.
 
 **Owner**: **Opus** — auto-failover changes production DNS; this is the highest
 risk automated action in the entire platform. Must be bulletproof.
+**Status**: 🔲 NOT STARTED
 **Depends on**: PD.4 (confirmed blocking verdict), Phase B PB.2+PB.3 (DNS
 plan/apply engine)
 **Reads first**: `docs/analysis/DNSCONTROL_ANALYSIS.md` §5 (how we apply DNS
@@ -769,6 +774,7 @@ This is the "response" half of the detect-and-respond cycle.
 ### PD.6 — GFW Dashboard + Recovery Monitoring
 
 **Owner**: Sonnet
+**Status**: 🔲 NOT STARTED
 **Depends on**: PD.4 (blocking verdicts), PD.5 (failover actions)
 **Reads first**: None specific (builds on PD.4 dashboard + PD.5 history)
 

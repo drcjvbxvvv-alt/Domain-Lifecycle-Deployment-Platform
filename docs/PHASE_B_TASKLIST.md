@@ -1,4 +1,4 @@
-# PHASE_B_TASKLIST.md — DNS Operations Work Order
+# PHASE_B_TASKLIST.md — DNS Operations Work Order (完成)
 
 > **Created 2026-04-21.** This document is the authoritative work order for
 > Phase B (DNS Operations) of the platform restructuring.
@@ -100,6 +100,7 @@ OctoDNS.
 ### PB.1 — DNS Record Data Model **(Opus)**
 
 **Owner**: **Opus** — schema design sets the foundation for sync correctness
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: Phase A complete (PA.1 schema, PA.2 dns_providers table)
 **Reads first**: `docs/analysis/DNSCONTROL_ANALYSIS.md` §5 "Proposed Interface",
 `docs/analysis/OCTODNS_ANALYSIS.md` §4 "Zone Model" + §5 "Record Model",
@@ -241,6 +242,7 @@ state — the diff between desired and actual is what drives plan/apply.
 
 **Owner**: **Opus** — most critical correctness path in Phase B; bugs here
 corrupt production DNS
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: PB.1 (data model + `pkg/provider/dns/types.go`)
 **Reads first**: `docs/analysis/DNSCONTROL_ANALYSIS.md` §2 "Provider Interfaces"
 + §5 "Proposed Interface", `docs/analysis/OCTODNS_ANALYSIS.md` §2 "BaseProvider"
@@ -366,6 +368,7 @@ DNSControl and OctoDNS both implement.
 ### PB.3 — Plan/Apply Workflow API
 
 **Owner**: Sonnet
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: PB.2 (sync engine must work end-to-end)
 **Reads first**: `docs/analysis/OCTODNS_ANALYSIS.md` §6 "Manager — Sync
 Orchestration", §7 "Proposed Plan/Apply API Flow"
@@ -457,6 +460,7 @@ checksum guard to prevent stale plans from being applied.
 ### PB.4 — Safety Thresholds **(Opus)**
 
 **Owner**: **Opus** — safety logic must be bulletproof; bugs here = DNS outage
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: PB.2 (plan computation provides the data), PB.3 (apply handler calls safety check)
 **Reads first**: `docs/analysis/OCTODNS_ANALYSIS.md` §3 "Plan & Safety Thresholds"
 
@@ -546,6 +550,7 @@ wipes. We adopt this pattern with configurable thresholds per provider.
 ### PB.5 — DNS Management UI
 
 **Owner**: Sonnet
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: PB.3 (plan/apply API), PB.4 (safety result display)
 **Reads first**: `docs/analysis/POWERDNS_ADMIN_ANALYSIS.md` §4 "Key Design
 Patterns" (staged-edit + batch-apply), `docs/FRONTEND_GUIDE.md`
@@ -653,6 +658,7 @@ batch. The plan/apply workflow gives them a clear diff before execution.
 ### PB.6 — Zone-Level RBAC
 
 **Owner**: Sonnet
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: PB.1 (domain_permissions table)
 **Reads first**: `docs/analysis/POWERDNS_ADMIN_ANALYSIS.md` §3 "RBAC Pattern"
 
@@ -744,6 +750,7 @@ manage DNS for specific domains regardless of their global role.
 ### PB.7 — DNS Templates + Drift Detection
 
 **Owner**: Sonnet
+**Status**: ✅ COMPLETED 2026-04-22
 **Depends on**: PB.5 (DNS UI exists), PB.3 (sync worker exists)
 **Reads first**: `docs/analysis/POWERDNS_ADMIN_ANALYSIS.md` §2 "Domain Template"
 
