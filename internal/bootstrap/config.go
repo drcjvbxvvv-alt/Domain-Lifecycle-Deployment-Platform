@@ -17,6 +17,7 @@ type Config struct {
 	Storage  StorageConfig  `mapstructure:"storage"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Agent    AgentConfig    `mapstructure:"agent"`
+	Probe    ProbeConfig    `mapstructure:"probe"`
 	Telegram TelegramConfig `mapstructure:"telegram"`
 	Webhook  WebhookConfig  `mapstructure:"webhook"`
 }
@@ -24,10 +25,11 @@ type Config struct {
 type ServerConfig struct {
 	Host        string `mapstructure:"host"`
 	Port        int    `mapstructure:"port"`
-	AgentPort   int    `mapstructure:"agent_port"`   // mTLS listener for Pull Agent protocol
-	TLSCertFile string `mapstructure:"tls_cert_file"` // server cert (signed by Agent CA)
+	AgentPort   int    `mapstructure:"agent_port"`  // mTLS listener for Pull Agent protocol
+	ProbePort   int    `mapstructure:"probe_port"`  // mTLS listener for GFW probe node protocol
+	TLSCertFile string `mapstructure:"tls_cert_file"` // server cert (signed by CA)
 	TLSKeyFile  string `mapstructure:"tls_key_file"`
-	CACertFile  string `mapstructure:"ca_cert_file"` // Agent CA — used to verify agent client certs
+	CACertFile  string `mapstructure:"ca_cert_file"` // CA — used to verify agent/probe client certs
 }
 
 type DBConfig struct {
@@ -94,6 +96,21 @@ type AgentConfig struct {
 	Region          string `mapstructure:"region"`        // agent region tag
 }
 
+// ProbeConfig holds runtime settings for cmd/probe (GFW probe node binary).
+type ProbeConfig struct {
+	ControlPlaneURL string `mapstructure:"control_plane_url"`
+	NodeID          string `mapstructure:"node_id"`   // operator-assigned, e.g. "cn-beijing-01"
+	Region          string `mapstructure:"region"`    // "cn-north", "cn-east", "hk", "jp"
+	Role            string `mapstructure:"role"`      // "probe" | "control"
+	ProbeVersion    string `mapstructure:"probe_version"`
+	CertFile        string `mapstructure:"cert_file"`    // probe client cert
+	KeyFile         string `mapstructure:"key_file"`
+	CACertFile      string `mapstructure:"ca_cert_file"` // CA cert to verify control plane
+	HeartbeatSecs   int    `mapstructure:"heartbeat_secs"`
+	CheckInterval   int    `mapstructure:"check_interval"` // seconds between measure loops
+	DNSResolver     string `mapstructure:"dns_resolver"`   // e.g. "8.8.8.8:53"; "" = system
+}
+
 type TelegramConfig struct {
 	BotToken string `mapstructure:"bot_token"`
 	ChatID   string `mapstructure:"chat_id"`
@@ -119,6 +136,7 @@ func Load() (*Config, error) {
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.agent_port", 8443)
+	v.SetDefault("server.probe_port", 8445)
 	v.SetDefault("db.host", "localhost")
 	v.SetDefault("db.port", 5432)
 	v.SetDefault("db.ssl_mode", "disable")
@@ -135,6 +153,10 @@ func Load() (*Config, error) {
 	v.SetDefault("agent.nginx_path", "/etc/nginx/conf.d")
 	v.SetDefault("agent.staging_path", "/tmp/agent-staging")
 	v.SetDefault("agent.allow_reload", true)
+	v.SetDefault("probe.role", "probe")
+	v.SetDefault("probe.heartbeat_secs", 30)
+	v.SetDefault("probe.check_interval", 180)
+	v.SetDefault("probe.dns_resolver", "")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

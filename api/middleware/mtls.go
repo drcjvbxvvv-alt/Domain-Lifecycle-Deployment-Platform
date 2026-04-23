@@ -67,3 +67,34 @@ func RequireAgentCert() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// Context keys for probe node identity set by ProbeMTLS middleware.
+const (
+	CtxKeyProbeCertSerial = "probe_cert_serial"
+	CtxKeyProbeCertCN     = "probe_cert_cn"
+)
+
+// ProbeMTLS extracts the probe node client certificate from the TLS connection.
+// Mirrors AgentMTLS — same permissive dev-mode behavior, same production enforcement.
+func ProbeMTLS() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.TLS != nil && len(c.Request.TLS.PeerCertificates) > 0 {
+			cert := c.Request.TLS.PeerCertificates[0]
+			c.Set(CtxKeyProbeCertSerial, cert.SerialNumber.String())
+			c.Set(CtxKeyProbeCertCN, cert.Subject.CommonName)
+			c.Next()
+			return
+		}
+		// Dev mode: no TLS — allow through with placeholder
+		c.Set(CtxKeyProbeCertSerial, "dev-no-cert")
+		c.Set(CtxKeyProbeCertCN, "dev-probe")
+		c.Next()
+	}
+}
+
+// GetProbeCertCN extracts the probe cert common name from the Gin context.
+func GetProbeCertCN(c *gin.Context) string {
+	v, _ := c.Get(CtxKeyProbeCertCN)
+	s, _ := v.(string)
+	return s
+}

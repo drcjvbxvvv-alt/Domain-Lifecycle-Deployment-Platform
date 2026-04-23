@@ -3,17 +3,17 @@ MODULE      := domain-platform
 GO          := go
 GOFLAGS     := -trimpath
 
-.PHONY: all build server worker migrate agent web test lint \
+.PHONY: all build server worker migrate agent probe web test lint \
         migrate-up migrate-down clean dev \
         check-lifecycle-writes check-release-writes check-agent-writes check-agent-safety \
-        scanner
+        check-probe-safety scanner
 
 all: build
 
 ## ── Build ────────────────────────────────────────────────────────────────────
-# Default build: control-plane binaries + Pull Agent.
+# Default build: control-plane binaries + Pull Agent + GFW Probe node.
 # `scanner` is intentionally NOT in the default target — see ADR-0003 D10.
-build: server worker migrate agent
+build: server worker migrate agent probe
 
 server:
 	$(GO) build $(GOFLAGS) -o $(BINARY_DIR)/server ./cmd/server
@@ -27,6 +27,10 @@ migrate:
 # Pull Agent (Go binary deployed to each Nginx host) — cross-compiled for linux/amd64
 agent:
 	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -o $(BINARY_DIR)/agent-linux-amd64 ./cmd/agent
+
+# GFW Probe node binary — cross-compiled for linux/amd64 (deployed to vantage-point hosts)
+probe:
+	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -o $(BINARY_DIR)/probe-linux-amd64 ./cmd/probe
 
 # Parked: cmd/scanner is reserved for the future GFW vertical (ADR-0003 D10).
 # Build it manually with `make scanner` only when working on that vertical.
@@ -111,6 +115,24 @@ check-agent-safety:
 		echo "$$plugin"; exit 1; \
 	fi
 	@echo "check-agent-safety: OK"
+
+# Structural safety boundary for cmd/probe/ (safety.go whitelist)
+# The probe binary MUST NOT contain os/exec, plugin.Open, or reflect.Call.
+# All network ops use pure Go stdlib + miekg/dns.
+check-probe-safety:
+	@hits=$$(grep -rn 'os/exec' cmd/probe/ --include='*.go' | \
+		grep -v ':[0-9]*:\s*//' || true); \
+	if [ -n "$$hits" ]; then \
+		echo "ERROR: os/exec found in cmd/probe/ — forbidden (see safety.go):"; \
+		echo "$$hits"; exit 1; \
+	fi
+	@plugin=$$(grep -rn 'plugin\.Open\|reflect\.Call' cmd/probe/ --include='*.go' | \
+		grep -v ':[0-9]*:\s*//' || true); \
+	if [ -n "$$plugin" ]; then \
+		echo "ERROR: forbidden dynamic loading in cmd/probe/:"; \
+		echo "$$plugin"; exit 1; \
+	fi
+	@echo "check-probe-safety: OK"
 
 ## ── Cleanup ──────────────────────────────────────────────────────────────────
 clean:

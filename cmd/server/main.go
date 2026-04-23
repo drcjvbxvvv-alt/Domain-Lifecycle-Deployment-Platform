@@ -20,6 +20,7 @@ import (
 	agentsvc "domain-platform/internal/agent"
 	alertsvc "domain-platform/internal/alert"
 	"domain-platform/internal/auth"
+	gfwsvc "domain-platform/internal/gfw"
 	"domain-platform/internal/bootstrap"
 	costsvc "domain-platform/internal/cost"
 	domainsvc "domain-platform/internal/domain"
@@ -157,6 +158,10 @@ func main() {
 	alertEngine := alertsvc.NewEngine(alertStore, asynqClient, logger)
 	alertHandler := handler.NewAlertHandler(alertStore, alertEngine, logger)
 
+	gfwNodeStore := postgres.NewGFWNodeStore(db)
+	gfwNodeSvc := gfwsvc.NewNodeService(gfwNodeStore, domainStore, logger)
+	probeNodeHandler := handler.NewProbeNodeHandler(gfwNodeSvc, gfwNodeStore, logger)
+
 	// ── Management API listener (:8080, JWT auth) ──────────────────────────
 	mgmtRouter := buildManagementRouter(logger, router.Deps{
 		AuthHandler:        authHandler,
@@ -181,6 +186,7 @@ func main() {
 		DNSTemplateHandler:      dnsTemplateHandler,
 		ProbeHandler:            probeHandler,
 		AlertHandler:            alertHandler,
+		ProbeNodeHandler:        probeNodeHandler,
 		JWTManager:              jwtMgr,
 	})
 	mgmtAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -210,8 +216,26 @@ func main() {
 		agentServer.TLSConfig = tlsCfg
 	}
 
-	// ── Start both listeners ───────────────────────────────────────────────
-	errCh := make(chan error, 2)
+	// ── Probe protocol listener (:8445, mTLS) ────────────────────────────
+	probeRouter := buildProbeRouter(logger, probeNodeHandler)
+	probeAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.ProbePort)
+	probeServer := &http.Server{
+		Addr:         probeAddr,
+		Handler:      probeRouter,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	if cfg.Server.CACertFile != "" {
+		tlsCfg, tlsErr := buildAgentTLSConfig(cfg.Server) // reuse same CA for probe nodes
+		if tlsErr != nil {
+			logger.Fatal("build probe TLS config", zap.Error(tlsErr))
+		}
+		probeServer.TLSConfig = tlsCfg
+	}
+
+	// ── Start all three listeners ──────────────────────────────────────────
+	errCh := make(chan error, 3)
 
 	go func() {
 		logger.Info("management API listening", zap.String("addr", mgmtAddr))
@@ -234,6 +258,19 @@ func main() {
 		}
 	}()
 
+	go func() {
+		logger.Info("probe protocol listening", zap.String("addr", probeAddr))
+		var serveErr error
+		if probeServer.TLSConfig != nil {
+			serveErr = probeServer.ListenAndServeTLS(cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile)
+		} else {
+			serveErr = probeServer.ListenAndServe()
+		}
+		if serveErr != nil && serveErr != http.ErrServerClosed {
+			errCh <- fmt.Errorf("probe server: %w", serveErr)
+		}
+	}()
+
 	// ── Graceful shutdown ─────────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -253,6 +290,9 @@ func main() {
 	}
 	if err := agentServer.Shutdown(ctx); err != nil {
 		logger.Error("agent server shutdown error", zap.Error(err))
+	}
+	if err := probeServer.Shutdown(ctx); err != nil {
+		logger.Error("probe server shutdown error", zap.Error(err))
 	}
 
 	logger.Info("server exited cleanly")
@@ -293,6 +333,22 @@ func buildAgentRouter(_ *zap.Logger, h *handler.AgentProtocolHandler) *gin.Engin
 		v1.POST("/tasks/:taskId/claim", h.ClaimTask)
 		v1.POST("/tasks/:taskId/report", h.ReportTask)
 	}
+
+	return r
+}
+
+// buildProbeRouter returns the Gin engine for the mTLS GFW probe node protocol.
+// Endpoints: /probe/v1/register, /probe/v1/heartbeat, /probe/v1/assignments, /probe/v1/measurements.
+func buildProbeRouter(_ *zap.Logger, h *handler.ProbeNodeHandler) *gin.Engine {
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	r.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	router.RegisterProbeV1(r, h)
 
 	return r
 }

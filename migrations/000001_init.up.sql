@@ -824,6 +824,51 @@ ALTER TABLE domains ADD COLUMN IF NOT EXISTS last_sync_at  TIMESTAMPTZ;
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS last_drift_at TIMESTAMPTZ;
 
 -- ============================================================
+-- PHASE D: GFW Detection                                     [PD.1]
+-- ============================================================
+
+-- Probe nodes (CN + control vantage points).
+-- role: "probe" = inside CN, "control" = uncensored (HK/JP/etc.)
+-- status state machine: registered → online ↔ offline → error
+CREATE TABLE gfw_probe_nodes (
+    id              BIGSERIAL PRIMARY KEY,
+    uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
+    node_id         VARCHAR(64) NOT NULL,       -- operator-assigned, e.g. "cn-beijing-01"
+    region          VARCHAR(64) NOT NULL,        -- "cn-north", "cn-east", "hk", "jp"
+    role            VARCHAR(16) NOT NULL,        -- "probe" | "control"
+    status          VARCHAR(32) NOT NULL DEFAULT 'registered',
+    last_seen_at    TIMESTAMPTZ,
+    agent_version   VARCHAR(32),
+    ip_address      VARCHAR(45),
+    metadata        JSONB NOT NULL DEFAULT '{}', -- load_avg, disk_free, etc.
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_gfw_probe_nodes_node_id UNIQUE (node_id),
+    CONSTRAINT chk_gfw_probe_nodes_role   CHECK (role   IN ('probe', 'control')),
+    CONSTRAINT chk_gfw_probe_nodes_status CHECK (status IN ('registered','online','offline','error'))
+);
+
+CREATE INDEX idx_gfw_probe_nodes_status  ON gfw_probe_nodes(status);
+CREATE INDEX idx_gfw_probe_nodes_region  ON gfw_probe_nodes(region);
+
+-- Check assignments: which probe + control nodes check which domains.
+-- probe_node_ids / control_node_ids stored as JSONB arrays of node_id strings.
+CREATE TABLE gfw_check_assignments (
+    id                BIGSERIAL PRIMARY KEY,
+    uuid              UUID NOT NULL DEFAULT gen_random_uuid(),
+    domain_id         BIGINT NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    probe_node_ids    JSONB NOT NULL DEFAULT '[]',   -- ["cn-beijing-01", "cn-shanghai-01"]
+    control_node_ids  JSONB NOT NULL DEFAULT '[]',   -- ["hk-01", "jp-01"]
+    check_interval    INT NOT NULL DEFAULT 180,       -- seconds between check cycles
+    enabled           BOOLEAN NOT NULL DEFAULT true,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_gfw_check_assignments_domain UNIQUE (domain_id)
+);
+
+CREATE INDEX idx_gfw_check_assignments_enabled ON gfw_check_assignments(enabled);
+
+-- ============================================================
 -- SEED DATA                                                  [P1]
 -- ============================================================
 -- Five roles per ADR-0003 D7

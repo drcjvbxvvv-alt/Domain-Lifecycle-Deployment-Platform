@@ -32,6 +32,7 @@ type Deps struct {
 	DNSTemplateHandler       *handler.DNSTemplateHandler
 	ProbeHandler             *handler.ProbeHandler
 	AlertHandler             *handler.AlertHandler
+	ProbeNodeHandler         *handler.ProbeNodeHandler
 	JWTManager               *auth.JWTManager
 }
 
@@ -296,5 +297,36 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			notifRules.PUT("/:id", middleware.RequireAnyRole("admin"), deps.AlertHandler.UpdateRule)
 			notifRules.DELETE("/:id", middleware.RequireAnyRole("admin"), deps.AlertHandler.DeleteRule)
 		}
+
+		// ── GFW Probe Node Admin (PD.1) ───────────────────────────────────────
+		gfw := authed.Group("/gfw")
+		{
+			// Probe nodes (read-only via admin console)
+			gfwNodes := gfw.Group("/nodes")
+			{
+				gfwNodes.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeNodeHandler.ListNodes)
+				gfwNodes.GET("/:nodeId", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeNodeHandler.GetNode)
+			}
+			// Check assignments (CRUD)
+			gfwAssignments := gfw.Group("/assignments")
+			{
+				gfwAssignments.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeNodeHandler.ListAssignments)
+				gfwAssignments.GET("/:domainId", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeNodeHandler.GetAssignment)
+				gfwAssignments.PUT("/:domainId", middleware.RequireAnyRole("admin"), deps.ProbeNodeHandler.UpsertAssignment)
+				gfwAssignments.DELETE("/:domainId", middleware.RequireAnyRole("admin"), deps.ProbeNodeHandler.DeleteAssignment)
+			}
+		}
+	}
+}
+
+// RegisterProbeV1 mounts the probe node protocol endpoints onto the probe Gin engine.
+// Called by buildProbeRouter in cmd/server/main.go.
+func RegisterProbeV1(r *gin.Engine, h *handler.ProbeNodeHandler) {
+	v1 := r.Group("/probe/v1", middleware.ProbeMTLS())
+	{
+		v1.POST("/register", h.Register)
+		v1.POST("/heartbeat", h.Heartbeat)
+		v1.GET("/assignments", h.GetAssignments)
+		v1.POST("/measurements", h.SubmitMeasurements)
 	}
 }
