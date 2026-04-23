@@ -52,18 +52,19 @@ defineProps<{
 }
 
 .page-header__title {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.3;
-  letter-spacing: -0.3px;
+  line-height: 1.25;
+  letter-spacing: -0.5px;
 }
 
 .page-header__subtitle {
   font-size: 13px;
-  color: var(--text-muted);
-  margin-top: 2px;
+  color: var(--text-secondary);
+  margin-top: 3px;
   line-height: 1;
+  font-weight: 500;
 }
 
 .page-header__actions {

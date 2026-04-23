@@ -23,9 +23,10 @@ const (
 	TypeAgentUpgradeDispatch = "agent:upgrade_dispatch"
 
 	// Probe
-	TypeProbeRunL1 = "probe:run_l1"
-	TypeProbeRunL2 = "probe:run_l2"
-	TypeProbeRunL3 = "probe:run_l3"
+	TypeProbeScheduleAll = "probe:schedule_all" // batch: create probe_tasks for all enabled policies
+	TypeProbeRunL1       = "probe:run_l1"       // single domain L1 check (DNS+TCP+HTTP+TLS)
+	TypeProbeRunL2       = "probe:run_l2"       // single domain L2 check (keyword+meta+hash)
+	TypeProbeRunL3       = "probe:run_l3"       // single domain L3 check (health endpoint)
 
 	// Domain expiry checking
 	TypeDomainExpiryCheck = "domain:expiry_check" // daily: compute expiry_status, detect changes, notify

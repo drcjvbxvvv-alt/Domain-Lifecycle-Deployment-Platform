@@ -180,7 +180,7 @@ export const naiveThemeOverrides: GlobalThemeOverrides = {
     scrollbarColor:      '#d1d9e6',
     scrollbarColorHover: '#aab5c8',
 
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+    fontFamily: "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif",
     fontSize:   '14px',
     borderRadius: '8px',
   },
@@ -214,8 +214,12 @@ export const naiveThemeOverrides: GlobalThemeOverrides = {
     thPaddingMedium:    '0 16px',
     tdPaddingMedium:    '0 16px',
     thFontWeight:       '600',
-    thTextColor:        colors.textMuted,
+    thTextColor:        colors.textSecondary,   // more readable than textMuted
+    thColor:            '#f4f6fb',              // slightly deeper table header bg
+    borderColor:        colors.border,
     borderRadius:       '10px',
+    tdTextColor:        colors.textPrimary,
+    fontSizeMedium:     '13.5px',
   },
   Card: {
     borderRadius: '12px',

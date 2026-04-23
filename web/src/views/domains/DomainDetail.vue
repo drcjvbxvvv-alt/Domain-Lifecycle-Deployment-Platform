@@ -612,10 +612,10 @@ onMounted(async () => {
             <StatusTag :status="store.current.lifecycle_state" />
           </NDescriptionsItem>
           <NDescriptionsItem label="專案 ID">{{ store.current.project_id }}</NDescriptionsItem>
-          <NDescriptionsItem label="Registrar 帳號">
+          <NDescriptionsItem label="域名註冊商">
             {{ store.current.registrar_account_id != null ? `#${store.current.registrar_account_id}` : '-' }}
           </NDescriptionsItem>
-          <NDescriptionsItem label="DNS Provider">
+          <NDescriptionsItem label="DNS 解析服務">
             {{ store.current.dns_provider_id != null ? `#${store.current.dns_provider_id}` : '-' }}
           </NDescriptionsItem>
           <NDescriptionsItem label="到期日">{{ fmtDate(store.current.expiry_date) }}</NDescriptionsItem>
@@ -1001,12 +1001,12 @@ onMounted(async () => {
       :mask-closable="false"
     >
       <NForm label-placement="left" label-width="110px">
-        <NFormItem label="Registrar">
+        <NFormItem label="域名註冊商">
           <NSpace vertical style="width:100%">
             <NSelect
               v-model:value="editForm._selectedRegistrar"
               :options="registrarOptions"
-              placeholder="選擇 Registrar"
+              placeholder="選擇註冊商"
               clearable
               @update:value="onEditRegistrarChange"
             />
@@ -1019,11 +1019,11 @@ onMounted(async () => {
             />
           </NSpace>
         </NFormItem>
-        <NFormItem label="DNS Provider">
+        <NFormItem label="DNS 解析服務">
           <NSelect
             v-model:value="(editForm as any).dns_provider_id"
             :options="dnsOptions"
-            placeholder="選擇 DNS Provider"
+            placeholder="選擇 DNS 解析服務"
             clearable
           />
         </NFormItem>

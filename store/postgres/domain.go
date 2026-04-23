@@ -228,6 +228,21 @@ func (s *DomainStore) ListActiveByProject(ctx context.Context, projectID int64) 
 	return domains, nil
 }
 
+// ListActive returns all active (non-deleted) domains across all projects.
+// Used by the probe scheduler to find all domains that need health checks.
+func (s *DomainStore) ListActive(ctx context.Context) ([]Domain, error) {
+	var domains []Domain
+	err := s.db.SelectContext(ctx, &domains,
+		`SELECT `+domainColumns+`
+		 FROM domains
+		 WHERE lifecycle_state = 'active' AND deleted_at IS NULL
+		 ORDER BY id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list active domains: %w", err)
+	}
+	return domains, nil
+}
+
 // ListActiveWithDNSProvider returns all active domains that have a dns_provider_id set.
 // Used by the DNS drift monitor to identify domains that need periodic drift checks.
 func (s *DomainStore) ListActiveWithDNSProvider(ctx context.Context) ([]Domain, error) {

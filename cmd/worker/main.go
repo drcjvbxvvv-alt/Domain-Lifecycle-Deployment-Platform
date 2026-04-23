@@ -17,6 +17,7 @@ import (
 	"domain-platform/internal/dnsquery"
 	importsvc "domain-platform/internal/importer"
 	"domain-platform/internal/lifecycle"
+	"domain-platform/internal/probe"
 	"domain-platform/internal/release"
 	sslsvc "domain-platform/internal/ssl"
 	"domain-platform/internal/tasks"
@@ -95,6 +96,14 @@ func main() {
 	asynqClient := bootstrap.NewAsynqClient(cfg.Redis)
 	defer asynqClient.Close()
 
+	// ── Probe engine (PC.1) ───────────────────────────────────────────────
+	probeStore := postgres.NewProbeStore(db)
+	probeSvc := probe.NewService(probeStore, domainStore, asynqClient, logger)
+	probeScheduleAllHandler := probe.NewHandleScheduleAll(probeSvc, logger)
+	probeL1Handler := probe.NewHandleL1(probeSvc, logger)
+	probeL2Handler := probe.NewHandleL2(probeSvc, logger)
+	probeL3Handler := probe.NewHandleL3(probeSvc, logger)
+
 	// DNS drift monitoring
 	dnsQuerySvc := dnsquery.NewService("", logger) // "" = auto-detect system resolver
 	dnsProviderStore := postgres.NewDNSProviderStore(db)
@@ -160,9 +169,10 @@ func main() {
 	mux.Handle(tasks.TypeReleaseRollback, releaseRollbackHandler)
 	mux.HandleFunc(tasks.TypeAgentHealthCheck, stubFor(tasks.TypeAgentHealthCheck))
 	mux.HandleFunc(tasks.TypeAgentUpgradeDispatch, stubFor(tasks.TypeAgentUpgradeDispatch))
-	mux.HandleFunc(tasks.TypeProbeRunL1, stubFor(tasks.TypeProbeRunL1))
-	mux.HandleFunc(tasks.TypeProbeRunL2, stubFor(tasks.TypeProbeRunL2))
-	mux.HandleFunc(tasks.TypeProbeRunL3, stubFor(tasks.TypeProbeRunL3))
+	mux.HandleFunc(tasks.TypeProbeScheduleAll, probeScheduleAllHandler.ProcessTask)
+	mux.HandleFunc(tasks.TypeProbeRunL1, probeL1Handler.ProcessTask)
+	mux.HandleFunc(tasks.TypeProbeRunL2, probeL2Handler.ProcessTask)
+	mux.HandleFunc(tasks.TypeProbeRunL3, probeL3Handler.ProcessTask)
 	mux.HandleFunc(tasks.TypeNotifySend, stubFor(tasks.TypeNotifySend))
 
 	// ── Periodic scheduler ────────────────────────────────────────────────────
@@ -183,6 +193,14 @@ func main() {
 	driftTask := asynq.NewTask(tasks.TypeDNSDriftCheckAll, driftPayload, asynq.Queue("default"))
 	if _, err := scheduler.Register("@every 30m", driftTask); err != nil {
 		logger.Fatal("register dns drift scheduler", zap.Error(err))
+	}
+
+	// Probe schedule-all: every 5 minutes.
+	// Creates probe_tasks for all enabled policies × active domains, then enqueues tier runners.
+	probeSchedulePayload := []byte(`{}`)
+	probeScheduleTask := asynq.NewTask(tasks.TypeProbeScheduleAll, probeSchedulePayload, asynq.Queue("probe"))
+	if _, err := scheduler.Register("@every 5m", probeScheduleTask); err != nil {
+		logger.Fatal("register probe schedule_all scheduler", zap.Error(err))
 	}
 
 	logger.Info("worker starting",

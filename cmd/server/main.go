@@ -149,6 +149,9 @@ func main() {
 	dnsTemplateSvc := dnstemplateSvc.NewService(dnsTemplateStore, logger)
 	dnsTemplateHandler := handler.NewDNSTemplateHandler(dnsTemplateSvc, logger)
 
+	probeStore := postgres.NewProbeStore(db)
+	probeHandler := handler.NewProbeHandler(probeStore)
+
 	// ── Management API listener (:8080, JWT auth) ──────────────────────────
 	mgmtRouter := buildManagementRouter(logger, router.Deps{
 		AuthHandler:        authHandler,
@@ -171,6 +174,7 @@ func main() {
 		DomainPermissionHandler: domainPermHandler,
 		PermissionChecker:       permSvc,
 		DNSTemplateHandler:      dnsTemplateHandler,
+		ProbeHandler:            probeHandler,
 		JWTManager:              jwtMgr,
 	})
 	mgmtAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

@@ -30,6 +30,7 @@ type Deps struct {
 	DomainPermissionHandler  *handler.DomainPermissionHandler
 	PermissionChecker        middleware.DNSPermissionChecker
 	DNSTemplateHandler       *handler.DNSTemplateHandler
+	ProbeHandler             *handler.ProbeHandler
 	JWTManager               *auth.JWTManager
 }
 
@@ -261,5 +262,18 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			dnsProviders.PUT("/:id", middleware.RequireAnyRole("admin"), deps.DNSProviderHandler.Update)
 			dnsProviders.DELETE("/:id", middleware.RequireAnyRole("admin"), deps.DNSProviderHandler.Delete)
 		}
+
+		// ── Probe Policies (PC.1) ──────────────────────────────────────
+		probePolicies := authed.Group("/probe-policies")
+		{
+			probePolicies.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeHandler.ListPolicies)
+			probePolicies.POST("", middleware.RequireAnyRole("admin"), deps.ProbeHandler.CreatePolicy)
+			probePolicies.GET("/:id", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeHandler.GetPolicy)
+			probePolicies.PUT("/:id", middleware.RequireAnyRole("admin"), deps.ProbeHandler.UpdatePolicy)
+			probePolicies.DELETE("/:id", middleware.RequireAnyRole("admin"), deps.ProbeHandler.DeletePolicy)
+		}
+
+		// Probe results nested under domains
+		domains.GET("/:id/probe-results", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeHandler.ListDomainResults)
 	}
 }

@@ -4,25 +4,27 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 CREATE TABLE probe_results (
-    id                BIGSERIAL,
-    domain_id         BIGINT NOT NULL,
-    policy_id         BIGINT,
-    probe_task_id     BIGINT,
-    tier              SMALLINT NOT NULL,
-    status            VARCHAR(16) NOT NULL,
-    http_status       INT,
-    response_time_ms  INT,
-    response_size_b   INT,
-    tls_handshake_ok  BOOLEAN,
-    cert_expires_at   TIMESTAMPTZ,
-    content_hash      VARCHAR(80),
+    id                   BIGSERIAL,
+    domain_id            BIGINT NOT NULL,
+    policy_id            BIGINT,
+    probe_task_id        BIGINT,
+    tier                 SMALLINT NOT NULL,
+    status               VARCHAR(16) NOT NULL,  -- ok | fail | timeout | error
+    http_status          INT,
+    response_time_ms     INT,
+    response_size_b      INT,
+    tls_handshake_ok     BOOLEAN,
+    cert_expires_at      TIMESTAMPTZ,
+    content_hash         VARCHAR(80),
     expected_artifact_id BIGINT,
     detected_artifact_id BIGINT,
-    error_message     TEXT,
-    probe_runner      VARCHAR(64),
-    checked_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    error_message        TEXT,
+    probe_runner         VARCHAR(64),
+    detail               JSONB,                 -- tier-specific detail (L1: tcp flags; L2: keyword/meta; L3: body)
+    checked_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id, checked_at),
-    CONSTRAINT chk_probe_results_tier CHECK (tier IN (1, 2, 3))
+    CONSTRAINT chk_probe_results_tier   CHECK (tier IN (1, 2, 3)),
+    CONSTRAINT chk_probe_results_status CHECK (status IN ('ok', 'fail', 'timeout', 'error'))
 );
 
 SELECT create_hypertable('probe_results', 'checked_at', chunk_time_interval => INTERVAL '1 day');

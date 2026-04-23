@@ -529,20 +529,24 @@ CREATE TABLE probe_policies (
 );
 
 CREATE TABLE probe_tasks (
-    id                BIGSERIAL PRIMARY KEY,
-    uuid              UUID NOT NULL DEFAULT gen_random_uuid(),
-    policy_id         BIGINT NOT NULL REFERENCES probe_policies(id),
-    domain_id         BIGINT NOT NULL REFERENCES domains(id),
-    release_id        BIGINT REFERENCES releases(id),
+    id                   BIGSERIAL PRIMARY KEY,
+    uuid                 UUID NOT NULL DEFAULT gen_random_uuid(),
+    policy_id            BIGINT NOT NULL REFERENCES probe_policies(id),
+    domain_id            BIGINT NOT NULL REFERENCES domains(id),
+    release_id           BIGINT REFERENCES releases(id),
     expected_artifact_id BIGINT REFERENCES artifacts(id),
-    scheduled_for     TIMESTAMPTZ NOT NULL,
-    status            VARCHAR(20) NOT NULL DEFAULT 'pending',
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    scheduled_for        TIMESTAMPTZ NOT NULL,
+    status               VARCHAR(20) NOT NULL DEFAULT 'pending',
+    started_at           TIMESTAMPTZ,
+    completed_at         TIMESTAMPTZ,
+    error_message        TEXT,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_probe_tasks_status CHECK (
         status IN ('pending', 'running', 'completed', 'cancelled')
     )
 );
 CREATE INDEX idx_probe_tasks_scheduled ON probe_tasks (scheduled_for) WHERE status = 'pending';
+CREATE INDEX idx_probe_tasks_domain    ON probe_tasks (domain_id, scheduled_for DESC);
 
 -- ============================================================
 -- ALERTS                                                     [P3]

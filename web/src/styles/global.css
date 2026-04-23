@@ -37,7 +37,8 @@
   --primary-hover:   #3b6ef0;
   --primary-pressed: #2c5de0;
 
-  /* Typography — monospace for technical values (UUIDs, checksums, IDs) */
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
 
   /* Status semantic colors — shared by all 3 state machines (Domain Lifecycle / Release / Agent).
@@ -110,13 +111,14 @@
 
 html, body {
   height: 100%;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
   background-color: var(--bg-page);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01'; /* Inter: open digits, alternate 1 */
 }
 
 #app {
@@ -159,6 +161,34 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Naive UI polish patches ──────────────────────────────────────────────── */
+
+/* Button: smooth hover/active transitions */
+.n-button {
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
+}
+
+/* Input + Select: smooth focus ring */
+.n-input, .n-base-selection {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+/* Table: tighter alternating row feel via hover only — no zebra */
+.n-data-table-tr:hover .n-data-table-td {
+  background-color: var(--bg-hover) !important;
+}
+
+/* Descriptions (domain detail info cards): label weight + spacing */
+.n-descriptions-table-row .n-descriptions-table-content .n-descriptions-item__label {
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+}
+
+/* Tag: slightly more letter-spacing so Chinese chars breathe */
+.n-tag {
+  letter-spacing: 0.2px;
 }
 
 /* ── Page layout shell ────────────────────────────────────────────────────── */
