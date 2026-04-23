@@ -2,6 +2,12 @@
 bin/
 *.exe
 *.out
+# Prevent root-level compiled binaries from being committed accidentally
+/server
+/worker
+/agent
+/probe
+/migrate
 
 # Go
 vendor/
