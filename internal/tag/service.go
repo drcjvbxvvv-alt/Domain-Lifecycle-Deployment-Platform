@@ -205,6 +205,13 @@ func (s *Service) ExportDomains(ctx context.Context, f postgres.ListFilter) ([]p
 	return s.domainStore.ListWithFilter(ctx, f)
 }
 
+// ExportDomainsEnriched returns enriched domain rows (with registrar/CDN names)
+// for CSV export. The filter limit is set to 10 000 to bound output size.
+func (s *Service) ExportDomainsEnriched(ctx context.Context, f postgres.ListFilter) ([]postgres.DomainListRow, error) {
+	f.Limit = 10000
+	return s.domainStore.ListEnriched(ctx, f)
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func isDuplicate(err error) bool {

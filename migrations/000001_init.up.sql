@@ -1,6 +1,7 @@
--- 000001_init.up.sql — Phase 1 schema + P2-P4 tables (pre-launch exception).
--- See docs/DATABASE_SCHEMA.md for field-level docs and rationale.
+-- 000001_init.up.sql — Complete schema (merged from 000001 + 000002 + 000003)
 -- Pre-launch exception (ADR-0003 D9): this file may be edited in place during P1.
+-- TimescaleDB features are wrapped in conditional DO blocks; the schema works
+-- on plain PostgreSQL without TimescaleDB installed.
 
 -- ============================================================
 -- Extensions
@@ -112,7 +113,39 @@ CREATE TABLE dns_providers (
 );
 
 -- ============================================================
--- DOMAINS (Domain Lifecycle + Asset Layer)                   [P1+PA]
+-- CDN PROVIDERS + ACCOUNTS                                  [PE.1]
+-- ============================================================
+-- Created before domains so cdn_account_id FK can be declared inline.
+CREATE TABLE cdn_providers (
+    id              BIGSERIAL PRIMARY KEY,
+    uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
+    name            VARCHAR(128) NOT NULL,
+    provider_type   VARCHAR(64)  NOT NULL,
+    description     TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ,
+    CONSTRAINT uq_cdn_providers_type_name UNIQUE (provider_type, name)
+);
+
+CREATE TABLE cdn_accounts (
+    id              BIGSERIAL PRIMARY KEY,
+    uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
+    cdn_provider_id BIGINT NOT NULL REFERENCES cdn_providers(id),
+    account_name    VARCHAR(128) NOT NULL,
+    credentials     JSONB NOT NULL DEFAULT '{}',
+    notes           TEXT,
+    enabled         BOOLEAN NOT NULL DEFAULT true,
+    created_by      BIGINT REFERENCES users(id),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ,
+    CONSTRAINT uq_cdn_accounts_provider_name UNIQUE (cdn_provider_id, account_name)
+);
+CREATE INDEX idx_cdn_accounts_provider ON cdn_accounts(cdn_provider_id) WHERE deleted_at IS NULL;
+
+-- ============================================================
+-- DOMAINS (Domain Lifecycle + Asset Layer)                   [P1+PA+PE.2]
 -- ============================================================
 CREATE TABLE domains (
     id              BIGSERIAL PRIMARY KEY,
@@ -126,8 +159,8 @@ CREATE TABLE domains (
     tld                     VARCHAR(64),
     registrar_account_id    BIGINT REFERENCES registrar_accounts(id),
     dns_provider_id         BIGINT REFERENCES dns_providers(id),
-    cdn_account_id          BIGINT,                        -- FK added after cdn_accounts is created (see bottom)
-    origin_ips              TEXT[] NOT NULL DEFAULT '{}',  -- origin server IPs (PE.2)
+    cdn_account_id          BIGINT REFERENCES cdn_accounts(id) ON DELETE SET NULL,  -- PE.2
+    origin_ips              TEXT[] NOT NULL DEFAULT '{}',                            -- PE.2
 
     -- Asset: Registration dates & Expiry
     registration_date       DATE,
@@ -169,6 +202,16 @@ CREATE TABLE domains (
     notes                   TEXT,
     metadata                JSONB NOT NULL DEFAULT '{}',
 
+    -- Drift / sync tracking (PB.7)
+    last_sync_at            TIMESTAMPTZ,
+    last_drift_at           TIMESTAMPTZ,
+
+    -- GFW blocking status (PD.4, denormalised from gfw_verdicts)
+    blocking_status         VARCHAR(32),
+    blocking_type           VARCHAR(32),
+    blocking_since          TIMESTAMPTZ,
+    blocking_confidence     DECIMAL(3,2),
+
     -- Timestamps
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -189,9 +232,10 @@ CREATE INDEX idx_domains_project_state       ON domains (project_id, lifecycle_s
 CREATE INDEX idx_domains_fqdn                ON domains (fqdn) WHERE deleted_at IS NULL;
 CREATE INDEX idx_domains_registrar_account   ON domains (registrar_account_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_domains_dns_provider        ON domains (dns_provider_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_domains_cdn_account         ON domains (cdn_account_id) WHERE deleted_at IS NULL AND cdn_account_id IS NOT NULL;
 CREATE INDEX idx_domains_expiry_date         ON domains (expiry_date) WHERE deleted_at IS NULL AND expiry_date IS NOT NULL;
 CREATE INDEX idx_domains_tld                 ON domains (tld) WHERE deleted_at IS NULL;
--- cdn_account_id index added after FK constraint (see bottom of file)
+CREATE INDEX idx_domains_blocking_status     ON domains (blocking_status) WHERE blocking_status IS NOT NULL;
 
 CREATE TABLE domain_variables (
     id         BIGSERIAL PRIMARY KEY,
@@ -283,10 +327,9 @@ CREATE TABLE host_groups (
     name                    VARCHAR(100) NOT NULL,
     description             TEXT,
     region                  VARCHAR(64),
-    -- P2.5: per-host concurrency + nginx reload batching
-    max_concurrency         INT NOT NULL DEFAULT 0,           -- 0 = unlimited
-    reload_batch_size       INT NOT NULL DEFAULT 50,          -- domains per batch before reload
-    reload_batch_wait_secs  INT NOT NULL DEFAULT 30,          -- seconds to buffer before reload
+    max_concurrency         INT NOT NULL DEFAULT 0,
+    reload_batch_size       INT NOT NULL DEFAULT 50,
+    reload_batch_wait_secs  INT NOT NULL DEFAULT 30,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at              TIMESTAMPTZ,
@@ -407,7 +450,6 @@ CREATE TABLE release_scopes (
 CREATE INDEX idx_release_scopes_release ON release_scopes (release_id);
 CREATE INDEX idx_release_scopes_domain  ON release_scopes (domain_id);
 
--- Release shards                                                [P2 schema, P1 flat single shard]
 CREATE TABLE release_shards (
     id              BIGSERIAL PRIMARY KEY,
     release_id      BIGINT NOT NULL REFERENCES releases(id) ON DELETE CASCADE,
@@ -511,7 +553,7 @@ CREATE TABLE rollback_records (
 CREATE INDEX idx_rollback_records_release ON rollback_records (release_id);
 
 -- ============================================================
--- PROBE                                                       [P3]
+-- PROBE                                                      [PC.1]
 -- ============================================================
 CREATE TABLE probe_policies (
     id                BIGSERIAL PRIMARY KEY,
@@ -552,13 +594,71 @@ CREATE INDEX idx_probe_tasks_scheduled ON probe_tasks (scheduled_for) WHERE stat
 CREATE INDEX idx_probe_tasks_domain    ON probe_tasks (domain_id, scheduled_for DESC);
 
 -- ============================================================
--- ALERTS                                                     [P3]
+-- PROBE RESULTS (TimescaleDB hypertable or plain table)      [PC.1]
+-- ============================================================
+-- probe_results is created as a plain PostgreSQL table here.
+-- If TimescaleDB is installed the DO block below converts it to
+-- a hypertable and adds retention + compression policies.
+CREATE TABLE probe_results (
+    id                   BIGSERIAL,
+    domain_id            BIGINT NOT NULL,
+    policy_id            BIGINT,
+    probe_task_id        BIGINT,
+    tier                 SMALLINT NOT NULL,
+    status               VARCHAR(16) NOT NULL,
+    http_status          INT,
+    response_time_ms     INT,
+    response_size_b      INT,
+    tls_handshake_ok     BOOLEAN,
+    cert_expires_at      TIMESTAMPTZ,
+    content_hash         VARCHAR(80),
+    expected_artifact_id BIGINT,
+    detected_artifact_id BIGINT,
+    error_message        TEXT,
+    probe_runner         VARCHAR(64),
+    detail               JSONB,
+    checked_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- probe_type is referenced by the uptime analytics views
+    probe_type           VARCHAR(16) NOT NULL DEFAULT 'http',
+    -- measured_at alias used by the PC.5 continuous aggregate definitions
+    measured_at          TIMESTAMPTZ GENERATED ALWAYS AS (checked_at) STORED,
+    PRIMARY KEY (id, checked_at),
+    CONSTRAINT chk_probe_results_tier   CHECK (tier IN (1, 2, 3)),
+    CONSTRAINT chk_probe_results_status CHECK (status IN ('ok', 'fail', 'timeout', 'error'))
+);
+CREATE INDEX idx_probe_results_domain_time ON probe_results (domain_id, checked_at DESC);
+CREATE INDEX idx_probe_results_policy_time ON probe_results (policy_id, checked_at DESC) WHERE policy_id IS NOT NULL;
+
+-- TimescaleDB hypertable + retention + compression (skipped on plain PG)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
+    PERFORM create_hypertable('probe_results', 'checked_at',
+                              chunk_time_interval => INTERVAL '1 day',
+                              if_not_exists => TRUE);
+    PERFORM add_retention_policy('probe_results', INTERVAL '90 days',
+                                 if_not_exists => TRUE);
+    EXECUTE $q$
+      ALTER TABLE probe_results SET (
+          timescaledb.compress,
+          timescaledb.compress_segmentby = 'domain_id',
+          timescaledb.compress_orderby   = 'checked_at DESC'
+      )
+    $q$;
+    PERFORM add_compression_policy('probe_results', INTERVAL '7 days',
+                                   if_not_exists => TRUE);
+  END IF;
+END
+$$;
+
+-- ============================================================
+-- ALERTS                                                     [PC.2]
 -- ============================================================
 CREATE TABLE alert_events (
     id                BIGSERIAL PRIMARY KEY,
     uuid              UUID NOT NULL DEFAULT gen_random_uuid(),
     severity          VARCHAR(8)   NOT NULL,
-    source            VARCHAR(32)  NOT NULL DEFAULT 'system',  -- probe | drift | expiry | agent | manual
+    source            VARCHAR(32)  NOT NULL DEFAULT 'system',
     target_kind       VARCHAR(32)  NOT NULL,
     target_id         BIGINT,
     title             VARCHAR(200) NOT NULL,
@@ -576,13 +676,12 @@ CREATE INDEX idx_alert_events_dedup       ON alert_events (dedup_key, created_at
 CREATE INDEX idx_alert_events_unresolved  ON alert_events (severity, created_at DESC) WHERE resolved_at IS NULL;
 CREATE INDEX idx_alert_events_target      ON alert_events (target_kind, target_id, created_at DESC);
 
--- notification_channels: reusable named channels with embedded config/credentials
 CREATE TABLE notification_channels (
     id              BIGSERIAL PRIMARY KEY,
     uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
     name            VARCHAR(128) NOT NULL,
-    channel_type    VARCHAR(32)  NOT NULL,  -- "telegram" | "slack" | "webhook" | "email"
-    config          JSONB        NOT NULL,  -- type-specific credentials/config
+    channel_type    VARCHAR(32)  NOT NULL,
+    config          JSONB        NOT NULL,
     is_default      BOOLEAN      NOT NULL DEFAULT false,
     enabled         BOOLEAN      NOT NULL DEFAULT true,
     created_by      BIGINT REFERENCES users(id),
@@ -592,26 +691,24 @@ CREATE TABLE notification_channels (
 );
 CREATE INDEX idx_notification_channels_enabled ON notification_channels (enabled, channel_type);
 
--- notification_rules: many-to-many — which channels receive which alert types
 CREATE TABLE notification_rules (
     id              BIGSERIAL PRIMARY KEY,
     channel_id      BIGINT NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
-    alert_type      VARCHAR(64),   -- NULL = all alert types
-    min_severity    VARCHAR(8)  NOT NULL DEFAULT 'P3',  -- P1 | P2 | P3 | INFO
-    target_type     VARCHAR(32),   -- NULL = global; "project" | "domain"
-    target_id       BIGINT,        -- specific project/domain ID, NULL = global
+    alert_type      VARCHAR(64),
+    min_severity    VARCHAR(8)  NOT NULL DEFAULT 'P3',
+    target_type     VARCHAR(32),
+    target_id       BIGINT,
     enabled         BOOLEAN NOT NULL DEFAULT true,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_notification_rules_severity CHECK (min_severity IN ('P1', 'P2', 'P3', 'INFO'))
 );
 CREATE INDEX idx_notification_rules_enabled ON notification_rules (enabled, channel_id) WHERE enabled = true;
 
--- notification_history: audit trail of every dispatch attempt
 CREATE TABLE notification_history (
     id              BIGSERIAL PRIMARY KEY,
     channel_id      BIGINT NOT NULL REFERENCES notification_channels(id),
     alert_event_id  BIGINT REFERENCES alert_events(id),
-    status          VARCHAR(32) NOT NULL,  -- "sent" | "failed" | "suppressed"
+    status          VARCHAR(32) NOT NULL,
     message         TEXT,
     error           TEXT,
     sent_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -636,19 +733,19 @@ CREATE TABLE agent_versions (
 );
 
 CREATE TABLE agent_upgrade_jobs (
-    id                BIGSERIAL PRIMARY KEY,
-    uuid              UUID NOT NULL DEFAULT gen_random_uuid(),
-    target_version_id BIGINT NOT NULL REFERENCES agent_versions(id),
+    id                  BIGSERIAL PRIMARY KEY,
+    uuid                UUID NOT NULL DEFAULT gen_random_uuid(),
+    target_version_id   BIGINT NOT NULL REFERENCES agent_versions(id),
     rollback_version_id BIGINT REFERENCES agent_versions(id),
-    scope_filter      JSONB NOT NULL,
-    canary_count      INT NOT NULL DEFAULT 3,
-    status            VARCHAR(20) NOT NULL DEFAULT 'pending',
-    succeeded_count   INT NOT NULL DEFAULT 0,
-    failed_count      INT NOT NULL DEFAULT 0,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    started_at        TIMESTAMPTZ,
-    ended_at          TIMESTAMPTZ,
-    triggered_by      BIGINT REFERENCES users(id),
+    scope_filter        JSONB NOT NULL,
+    canary_count        INT NOT NULL DEFAULT 3,
+    status              VARCHAR(20) NOT NULL DEFAULT 'pending',
+    succeeded_count     INT NOT NULL DEFAULT 0,
+    failed_count        INT NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at          TIMESTAMPTZ,
+    ended_at            TIMESTAMPTZ,
+    triggered_by        BIGINT REFERENCES users(id),
     CONSTRAINT chk_agent_upgrade_jobs_status CHECK (
         status IN ('pending', 'canary', 'expanding', 'succeeded', 'failed', 'rolled_back', 'cancelled')
     )
@@ -705,7 +802,7 @@ CREATE INDEX idx_audit_logs_user   ON audit_logs (user_id, created_at DESC);
 CREATE INDEX idx_audit_logs_action ON audit_logs (action, created_at DESC);
 
 -- ============================================================
--- SSL CERTIFICATES (Domain Asset Layer)                      [PA]
+-- SSL CERTIFICATES                                           [PA]
 -- ============================================================
 CREATE TABLE ssl_certificates (
     id              BIGSERIAL PRIMARY KEY,
@@ -731,7 +828,7 @@ CREATE INDEX idx_ssl_certs_domain  ON ssl_certificates (domain_id) WHERE deleted
 CREATE INDEX idx_ssl_certs_expires ON ssl_certificates (expires_at) WHERE deleted_at IS NULL;
 
 -- ============================================================
--- DOMAIN FEE SCHEDULES & COST HISTORY (Domain Asset Layer)   [PA]
+-- DOMAIN FEE SCHEDULES & COST HISTORY                        [PA]
 -- ============================================================
 CREATE TABLE domain_fee_schedules (
     id               BIGSERIAL PRIMARY KEY,
@@ -765,7 +862,7 @@ CREATE TABLE domain_costs (
 CREATE INDEX idx_domain_costs_domain ON domain_costs (domain_id);
 
 -- ============================================================
--- TAGS (Domain Asset Layer)                                  [PA]
+-- TAGS                                                       [PA]
 -- ============================================================
 CREATE TABLE tags (
     id      BIGSERIAL PRIMARY KEY,
@@ -783,7 +880,7 @@ CREATE TABLE domain_tags (
 CREATE INDEX idx_domain_tags_tag ON domain_tags (tag_id);
 
 -- ============================================================
--- DOMAIN IMPORT JOBS (Domain Asset Layer)                    [PA]
+-- DOMAIN IMPORT JOBS                                         [PA]
 -- ============================================================
 CREATE TABLE domain_import_jobs (
     id                   BIGSERIAL PRIMARY KEY,
@@ -797,7 +894,7 @@ CREATE TABLE domain_import_jobs (
     skipped_count        INT NOT NULL DEFAULT 0,
     failed_count         INT NOT NULL DEFAULT 0,
     error_details        JSONB,
-    raw_csv              TEXT,                         -- original uploaded CSV content
+    raw_csv              TEXT,
     created_by           BIGINT REFERENCES users(id),
     started_at           TIMESTAMPTZ,
     completed_at         TIMESTAMPTZ,
@@ -813,14 +910,11 @@ CREATE TABLE domain_import_jobs (
 -- ============================================================
 -- DOMAIN PERMISSIONS (Zone-Level RBAC)                      [PB.6]
 -- ============================================================
--- Per-domain permission grants for individual users.
--- Access resolution: global role (via user_roles) takes precedence,
--- then domain-level permission. Highest permission wins.
 CREATE TABLE domain_permissions (
     id          BIGSERIAL PRIMARY KEY,
     domain_id   BIGINT NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
     user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    permission  VARCHAR(32) NOT NULL DEFAULT 'viewer', -- viewer, editor, admin
+    permission  VARCHAR(32) NOT NULL DEFAULT 'viewer',
     granted_by  BIGINT REFERENCES users(id),
     granted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_domain_permissions UNIQUE (domain_id, user_id),
@@ -834,94 +928,74 @@ CREATE INDEX idx_domain_permissions_user   ON domain_permissions (user_id);
 -- ============================================================
 -- DNS RECORD TEMPLATES                                       [PB.7]
 -- ============================================================
--- Reusable record blueprints with {{variable}} placeholders.
--- Applying a template = rendering + staging records for plan/apply.
 CREATE TABLE dns_record_templates (
     id          BIGSERIAL PRIMARY KEY,
     uuid        UUID NOT NULL DEFAULT gen_random_uuid(),
     name        VARCHAR(128) NOT NULL,
     description TEXT,
-    -- records: [{name:"@",type:"A",content:"{{ip}}",ttl:300,priority:0}, ...]
     records     JSONB NOT NULL DEFAULT '[]',
-    -- variables: {"ip": "", "mx_host": ""} — keys are variable names, values are default/description
     variables   JSONB NOT NULL DEFAULT '{}',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_dns_record_templates_name UNIQUE (name)
 );
 
--- Extend domains with drift/sync tracking columns
-ALTER TABLE domains ADD COLUMN IF NOT EXISTS last_sync_at  TIMESTAMPTZ;
-ALTER TABLE domains ADD COLUMN IF NOT EXISTS last_drift_at TIMESTAMPTZ;
-
 -- ============================================================
 -- PHASE D: GFW Detection                                     [PD.1]
 -- ============================================================
-
--- Probe nodes (CN + control vantage points).
--- role: "probe" = inside CN, "control" = uncensored (HK/JP/etc.)
--- status state machine: registered → online ↔ offline → error
 CREATE TABLE gfw_probe_nodes (
     id              BIGSERIAL PRIMARY KEY,
     uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
-    node_id         VARCHAR(64) NOT NULL,       -- operator-assigned, e.g. "cn-beijing-01"
-    region          VARCHAR(64) NOT NULL,        -- "cn-north", "cn-east", "hk", "jp"
-    role            VARCHAR(16) NOT NULL,        -- "probe" | "control"
+    node_id         VARCHAR(64) NOT NULL,
+    region          VARCHAR(64) NOT NULL,
+    role            VARCHAR(16) NOT NULL,
     status          VARCHAR(32) NOT NULL DEFAULT 'registered',
     last_seen_at    TIMESTAMPTZ,
     agent_version   VARCHAR(32),
     ip_address      VARCHAR(45),
-    metadata        JSONB NOT NULL DEFAULT '{}', -- load_avg, disk_free, etc.
+    metadata        JSONB NOT NULL DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_gfw_probe_nodes_node_id UNIQUE (node_id),
     CONSTRAINT chk_gfw_probe_nodes_role   CHECK (role   IN ('probe', 'control')),
     CONSTRAINT chk_gfw_probe_nodes_status CHECK (status IN ('registered','online','offline','error'))
 );
+CREATE INDEX idx_gfw_probe_nodes_status ON gfw_probe_nodes(status);
+CREATE INDEX idx_gfw_probe_nodes_region ON gfw_probe_nodes(region);
 
-CREATE INDEX idx_gfw_probe_nodes_status  ON gfw_probe_nodes(status);
-CREATE INDEX idx_gfw_probe_nodes_region  ON gfw_probe_nodes(region);
-
--- Check assignments: which probe + control nodes check which domains.
--- probe_node_ids / control_node_ids stored as JSONB arrays of node_id strings.
 CREATE TABLE gfw_check_assignments (
     id                BIGSERIAL PRIMARY KEY,
     uuid              UUID NOT NULL DEFAULT gen_random_uuid(),
     domain_id         BIGINT NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
-    probe_node_ids    JSONB NOT NULL DEFAULT '[]',   -- ["cn-beijing-01", "cn-shanghai-01"]
-    control_node_ids  JSONB NOT NULL DEFAULT '[]',   -- ["hk-01", "jp-01"]
-    check_interval    INT NOT NULL DEFAULT 180,       -- seconds between check cycles
+    probe_node_ids    JSONB NOT NULL DEFAULT '[]',
+    control_node_ids  JSONB NOT NULL DEFAULT '[]',
+    check_interval    INT NOT NULL DEFAULT 180,
     enabled           BOOLEAN NOT NULL DEFAULT true,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_gfw_check_assignments_domain UNIQUE (domain_id)
 );
-
 CREATE INDEX idx_gfw_check_assignments_enabled ON gfw_check_assignments(enabled);
 
--- Raw 4-layer measurements reported by probe + control nodes.           [PD.2]
--- TimescaleDB hypertable partitioned by measured_at; 180-day retention.
--- JSONB columns store per-layer result structs (probeprotocol wire format).
+-- GFW measurements hypertable (plain table if no TimescaleDB)         [PD.2]
 CREATE TABLE gfw_measurements (
     id              BIGSERIAL,
-    domain_id       BIGINT NOT NULL,                    -- FK to domains(id), not enforced for TimescaleDB perf
-    node_id         VARCHAR(64) NOT NULL,               -- FK to gfw_probe_nodes.node_id
-    node_role       VARCHAR(16) NOT NULL,               -- "probe" | "control"
+    domain_id       BIGINT NOT NULL,
+    node_id         VARCHAR(64) NOT NULL,
+    node_role       VARCHAR(16) NOT NULL,
     region          VARCHAR(64) NOT NULL DEFAULT '',
     fqdn            VARCHAR(512) NOT NULL,
-    dns_result      JSONB,                              -- DNSResult (including IsBogon, IsInjected flags)
-    tcp_results     JSONB,                              -- []TCPResult
-    tls_results     JSONB,                              -- []TLSResult
-    http_result     JSONB,                              -- HTTPResult
+    dns_result      JSONB,
+    tcp_results     JSONB,
+    tls_results     JSONB,
+    http_result     JSONB,
     total_ms        INT,
     measured_at     TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (measured_at, id)
 );
-
 CREATE INDEX idx_gfw_measurements_domain ON gfw_measurements(domain_id, measured_at DESC);
 CREATE INDEX idx_gfw_measurements_node   ON gfw_measurements(node_id,   measured_at DESC);
 
--- TimescaleDB hypertable + 180-day retention (non-TS environments: skip silently).
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
@@ -933,48 +1007,25 @@ BEGIN
 END
 $$;
 
--- Known GFW bogon IPs — maintained by the platform, checked by probe nodes.   [PD.2]
--- source: "seeded" (built-in at install) | "operator" (added via admin API)
 CREATE TABLE gfw_bogon_ips (
     id          BIGSERIAL PRIMARY KEY,
     ip_address  VARCHAR(45) NOT NULL,
-    source      VARCHAR(32) NOT NULL DEFAULT 'seeded',  -- "seeded" | "operator"
+    source      VARCHAR(32) NOT NULL DEFAULT 'seeded',
     note        TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_gfw_bogon_ips_ip UNIQUE (ip_address)
 );
 
--- Seed with well-documented GFW injection/bogon IPs (as of 2025).
--- Sources: OONI data, Censorship Canary, citizenlab/filtering-data.
-INSERT INTO gfw_bogon_ips (ip_address, source, note) VALUES
-    ('1.2.3.4',          'seeded', 'Classic GFW bogon — used in DNS injection since ~2010'),
-    ('37.235.1.174',     'seeded', 'GFW DNS injection — FreeDNS range hijacked'),
-    ('8.7.198.45',       'seeded', 'GFW DNS injection — bogon returned for blocked domains'),
-    ('46.82.174.68',     'seeded', 'GFW DNS injection — confirmed by OONI measurements'),
-    ('78.16.49.15',      'seeded', 'GFW DNS injection — repeated in OONI CN data'),
-    ('93.46.8.89',       'seeded', 'GFW DNS injection — CN ISP bogon range'),
-    ('93.46.8.90',       'seeded', 'GFW DNS injection — CN ISP bogon range'),
-    ('243.185.187.39',   'seeded', 'GFW DNS injection — non-routable bogon'),
-    ('243.185.187.30',   'seeded', 'GFW DNS injection — non-routable bogon'),
-    ('0.0.0.0',          'seeded', 'Null route — used by some CN ISPs for blocking'),
-    ('127.0.0.1',        'seeded', 'Localhost — used by some CN ISPs for NXDOMAIN substitute')
-ON CONFLICT (ip_address) DO NOTHING;
-
--- ============================================================
--- GFW VERDICTS                                              [PD.3]
--- ============================================================
--- One verdict row per (domain, probe_run) — the output of the OONI-style
--- decision tree comparing probe vs control measurements.
 CREATE TABLE gfw_verdicts (
     id               BIGSERIAL PRIMARY KEY,
     domain_id        BIGINT NOT NULL REFERENCES domains(id),
-    blocking         VARCHAR(32) NOT NULL DEFAULT '',  -- '' | 'dns' | 'tcp_ip' | 'tls_sni' | 'http-failure' | 'http-diff' | 'indeterminate'
+    blocking         VARCHAR(32) NOT NULL DEFAULT '',
     accessible       BOOLEAN NOT NULL,
-    dns_consistency  VARCHAR(16),                      -- 'consistent' | 'inconsistent' | NULL (no DNS data)
-    confidence       DECIMAL(3,2) NOT NULL DEFAULT 0,  -- 0.00 – 1.00
+    dns_consistency  VARCHAR(16),
+    confidence       DECIMAL(3,2) NOT NULL DEFAULT 0,
     probe_node_id    VARCHAR(64) NOT NULL,
     control_node_id  VARCHAR(64) NOT NULL DEFAULT '',
-    detail           JSONB,                            -- VerdictDetail: dns/tcp/tls/http per-layer evidence
+    detail           JSONB,
     measured_at      TIMESTAMPTZ NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_gfw_verdicts_blocking CHECK (
@@ -990,38 +1041,16 @@ CREATE INDEX idx_gfw_verdicts_blocking ON gfw_verdicts(blocking)
     WHERE blocking != '' AND blocking != 'indeterminate';
 
 -- ============================================================
--- GFW BLOCKING STATUS on domains                            [PD.4]
--- ============================================================
--- Denormalized summary updated by VerdictService on every verdict write.
--- Allows fast queries like "list all currently blocked domains" without
--- scanning gfw_verdicts.  The source-of-truth remains gfw_verdicts.
-ALTER TABLE domains ADD COLUMN IF NOT EXISTS blocking_status     VARCHAR(32);       -- NULL | 'possibly_blocked' | 'blocked'
-ALTER TABLE domains ADD COLUMN IF NOT EXISTS blocking_type       VARCHAR(32);       -- 'dns'|'tcp_ip'|'tls_sni'|'http-failure'|'http-diff'|'indeterminate'
-ALTER TABLE domains ADD COLUMN IF NOT EXISTS blocking_since      TIMESTAMPTZ;       -- when this blocking episode started
-ALTER TABLE domains ADD COLUMN IF NOT EXISTS blocking_confidence DECIMAL(3,2);      -- latest verdict confidence
-
-CREATE INDEX idx_domains_blocking_status ON domains(blocking_status)
-    WHERE blocking_status IS NOT NULL;
-
--- ============================================================
 -- MAINTENANCE WINDOWS                                        [PC.4]
 -- ============================================================
--- Planned downtime windows. While a domain is in maintenance:
---   • probe records status="maintenance" (not "down")
---   • alert engine suppresses alerts
---   • status page shows "Under Maintenance"
 CREATE TABLE maintenance_windows (
     id              BIGSERIAL PRIMARY KEY,
     uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
     title           VARCHAR(150) NOT NULL,
     description     TEXT,
-    -- "single" = one-time, "recurring_weekly" = every week on given weekdays,
-    -- "recurring_monthly" = every month on given day, "cron" = cron expression
     strategy        VARCHAR(32) NOT NULL DEFAULT 'single',
-    start_at        TIMESTAMPTZ,                -- for single: exact start
-    end_at          TIMESTAMPTZ,                -- for single: exact end
-    -- for recurring: {"weekdays":[1,5],"start_time":"02:00","duration_minutes":120,"timezone":"UTC"}
-    -- for cron:      {"expression":"0 2 * * 1","duration_minutes":120,"timezone":"UTC"}
+    start_at        TIMESTAMPTZ,
+    end_at          TIMESTAMPTZ,
     recurrence      JSONB,
     active          BOOLEAN NOT NULL DEFAULT true,
     created_by      BIGINT REFERENCES users(id),
@@ -1031,25 +1060,20 @@ CREATE TABLE maintenance_windows (
         strategy IN ('single', 'recurring_weekly', 'recurring_monthly', 'cron')
     )
 );
-
 CREATE INDEX idx_maintenance_windows_active    ON maintenance_windows(active);
 CREATE INDEX idx_maintenance_windows_start_end ON maintenance_windows(start_at, end_at)
     WHERE strategy = 'single';
 
--- Targets: which domains/host_groups/projects are covered by this window.
--- A domain is in maintenance if it is directly targeted OR its host_group
--- or project is targeted.
 CREATE TABLE maintenance_window_targets (
     id              BIGSERIAL PRIMARY KEY,
     maintenance_id  BIGINT NOT NULL REFERENCES maintenance_windows(id) ON DELETE CASCADE,
-    target_type     VARCHAR(32) NOT NULL,   -- "domain", "host_group", "project"
+    target_type     VARCHAR(32) NOT NULL,
     target_id       BIGINT NOT NULL,
     CONSTRAINT uq_maintenance_target UNIQUE (maintenance_id, target_type, target_id),
     CONSTRAINT chk_maintenance_target_type CHECK (
         target_type IN ('domain', 'host_group', 'project')
     )
 );
-
 CREATE INDEX idx_maintenance_targets_type_id ON maintenance_window_targets(target_type, target_id);
 
 -- ============================================================
@@ -1062,7 +1086,7 @@ CREATE TABLE status_pages (
     title                VARCHAR(255) NOT NULL,
     description          TEXT,
     published            BOOLEAN NOT NULL DEFAULT true,
-    password_hash        VARCHAR(255),          -- bcrypt; NULL = public
+    password_hash        VARCHAR(255),
     custom_domain        VARCHAR(255),
     theme                VARCHAR(32) DEFAULT 'default',
     logo_url             VARCHAR(512),
@@ -1081,18 +1105,16 @@ CREATE TABLE status_page_groups (
     name           VARCHAR(128) NOT NULL,
     sort_order     INT NOT NULL DEFAULT 0
 );
-
 CREATE INDEX idx_status_page_groups_page ON status_page_groups(status_page_id);
 
 CREATE TABLE status_page_monitors (
     id           BIGSERIAL PRIMARY KEY,
     group_id     BIGINT NOT NULL REFERENCES status_page_groups(id) ON DELETE CASCADE,
     domain_id    BIGINT NOT NULL REFERENCES domains(id),
-    display_name VARCHAR(128),    -- hides real FQDN if set
+    display_name VARCHAR(128),
     sort_order   INT NOT NULL DEFAULT 0,
     CONSTRAINT uq_status_page_monitor UNIQUE (group_id, domain_id)
 );
-
 CREATE INDEX idx_status_page_monitors_group  ON status_page_monitors(group_id);
 CREATE INDEX idx_status_page_monitors_domain ON status_page_monitors(domain_id);
 
@@ -1100,8 +1122,8 @@ CREATE TABLE status_page_incidents (
     id             BIGSERIAL PRIMARY KEY,
     status_page_id BIGINT NOT NULL REFERENCES status_pages(id) ON DELETE CASCADE,
     title          VARCHAR(255) NOT NULL,
-    content        TEXT,              -- Markdown body
-    severity       VARCHAR(32) NOT NULL DEFAULT 'info',  -- info, warning, danger
+    content        TEXT,
+    severity       VARCHAR(32) NOT NULL DEFAULT 'info',
     pinned         BOOLEAN NOT NULL DEFAULT false,
     active         BOOLEAN NOT NULL DEFAULT true,
     created_by     BIGINT REFERENCES users(id),
@@ -1109,39 +1131,28 @@ CREATE TABLE status_page_incidents (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_incident_severity CHECK (severity IN ('info', 'warning', 'danger'))
 );
-
 CREATE INDEX idx_status_page_incidents_page   ON status_page_incidents(status_page_id);
 CREATE INDEX idx_status_page_incidents_active ON status_page_incidents(status_page_id, active);
 
 -- ============================================================
--- UPTIME ANALYTICS (PC.5)                                   [PC.5]
+-- UPTIME ANALYTICS (PC.5) — continuous aggregates over probe_results
 -- ============================================================
--- TimescaleDB continuous aggregates over probe_results.
--- Refresh policies are set here; the hypertable is created in
--- the TimescaleDB migration (000002_timescale.up.sql).
--- These views are created conditionally so plain PostgreSQL
--- (without TimescaleDB) does not error at migration time.
-
--- Hourly rollup: up/down/maintenance counts + response time stats.
--- Requires TimescaleDB to be installed; skipped otherwise.
 DO $$
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
-  ) THEN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
     EXECUTE $sql$
       CREATE MATERIALIZED VIEW IF NOT EXISTS probe_stats_hourly
       WITH (timescaledb.continuous) AS
       SELECT
           domain_id,
           probe_type,
-          time_bucket('1 hour', measured_at)         AS bucket,
-          COUNT(*) FILTER (WHERE status = 'up')       AS up_count,
-          COUNT(*) FILTER (WHERE status = 'down')     AS down_count,
-          COUNT(*) FILTER (WHERE status = 'maintenance') AS maintenance_count,
-          AVG(response_time_ms)                        AS avg_response_ms,
-          MIN(response_time_ms)                        AS min_response_ms,
-          MAX(response_time_ms)                        AS max_response_ms,
+          time_bucket('1 hour', checked_at)           AS bucket,
+          COUNT(*) FILTER (WHERE status = 'ok')        AS up_count,
+          COUNT(*) FILTER (WHERE status = 'fail')      AS down_count,
+          COUNT(*) FILTER (WHERE status = 'timeout' OR status = 'error') AS maintenance_count,
+          AVG(response_time_ms)                         AS avg_response_ms,
+          MIN(response_time_ms)                         AS min_response_ms,
+          MAX(response_time_ms)                         AS max_response_ms,
           PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms) AS p95_response_ms
       FROM probe_results
       GROUP BY domain_id, probe_type, bucket
@@ -1154,80 +1165,45 @@ BEGIN
       SELECT
           domain_id,
           probe_type,
-          time_bucket('1 day', bucket)               AS bucket,
-          SUM(up_count)                               AS up_count,
-          SUM(down_count)                             AS down_count,
-          SUM(maintenance_count)                      AS maintenance_count,
-          AVG(avg_response_ms)                        AS avg_response_ms,
-          MIN(min_response_ms)                        AS min_response_ms,
-          MAX(max_response_ms)                        AS max_response_ms
+          time_bucket('1 day', bucket)                AS bucket,
+          SUM(up_count)                                AS up_count,
+          SUM(down_count)                              AS down_count,
+          SUM(maintenance_count)                       AS maintenance_count,
+          AVG(avg_response_ms)                         AS avg_response_ms,
+          MIN(min_response_ms)                         AS min_response_ms,
+          MAX(max_response_ms)                         AS max_response_ms
       FROM probe_stats_hourly
       GROUP BY domain_id, probe_type, bucket
       WITH NO DATA
     $sql$;
 
-    -- Refresh policies
     PERFORM add_continuous_aggregate_policy('probe_stats_hourly',
-      start_offset => INTERVAL '2 hours',
-      end_offset   => INTERVAL '1 hour',
+      start_offset      => INTERVAL '2 hours',
+      end_offset        => INTERVAL '1 hour',
       schedule_interval => INTERVAL '1 hour');
 
     PERFORM add_continuous_aggregate_policy('probe_stats_daily',
-      start_offset => INTERVAL '2 days',
-      end_offset   => INTERVAL '1 day',
+      start_offset      => INTERVAL '2 days',
+      end_offset        => INTERVAL '1 day',
       schedule_interval => INTERVAL '1 day');
   END IF;
 END
 $$;
 
 -- ============================================================
--- CDN PROVIDERS + ACCOUNTS                                  [PE.1]
+-- SEED DATA                                                  [P1 + PE.1]
 -- ============================================================
--- CDN/加速商供應商（與 Registrar、DNS Provider 並列）
-CREATE TABLE IF NOT EXISTS cdn_providers (
-    id              BIGSERIAL PRIMARY KEY,
-    uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
-    name            VARCHAR(128) NOT NULL,          -- "Cloudflare", "聚合", "網宿"
-    provider_type   VARCHAR(64)  NOT NULL,          -- "cloudflare"|"juhe"|"wangsu"|"baishan"|...
-    description     TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at      TIMESTAMPTZ,
-    CONSTRAINT uq_cdn_providers_type_name UNIQUE (provider_type, name)
-);
 
--- CDN 帳號（一個供應商可有多個帳號）
-CREATE TABLE IF NOT EXISTS cdn_accounts (
-    id              BIGSERIAL PRIMARY KEY,
-    uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
-    cdn_provider_id BIGINT NOT NULL REFERENCES cdn_providers(id),
-    account_name    VARCHAR(128) NOT NULL,          -- "直播2", "馬甲1"
-    credentials     JSONB NOT NULL DEFAULT '{}',    -- {api_key, secret, token...}
-    notes           TEXT,
-    enabled         BOOLEAN NOT NULL DEFAULT true,
-    created_by      BIGINT REFERENCES users(id),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at      TIMESTAMPTZ,
-    CONSTRAINT uq_cdn_accounts_provider_name UNIQUE (cdn_provider_id, account_name)
-);
+-- Five roles
+INSERT INTO roles (name, description) VALUES
+    ('viewer',          'Read-only access to all resources'),
+    ('operator',        'Can manage domains, templates, host groups, and trigger releases'),
+    ('release_manager', 'Can approve releases and manage release policies'),
+    ('admin',           'Full access including user management and system configuration'),
+    ('auditor',         'Read-only access plus audit log visibility')
+ON CONFLICT (name) DO NOTHING;
 
-CREATE INDEX IF NOT EXISTS idx_cdn_accounts_provider ON cdn_accounts(cdn_provider_id)
-    WHERE deleted_at IS NULL;
-
--- FK from domains.cdn_account_id → cdn_accounts.id (PE.2)
--- Added here (after cdn_accounts is created) to satisfy forward-reference constraint.
-ALTER TABLE domains
-    ADD CONSTRAINT fk_domains_cdn_account
-    FOREIGN KEY (cdn_account_id) REFERENCES cdn_accounts(id) ON DELETE SET NULL;
-
-CREATE INDEX idx_domains_cdn_account ON domains (cdn_account_id)
-    WHERE deleted_at IS NULL AND cdn_account_id IS NOT NULL;
-
--- ============================================================
--- SEED DATA                                                  [P1]
--- ============================================================
--- CDN 供應商預置清單 (PE.1)
+-- CDN providers
 INSERT INTO cdn_providers (name, provider_type, description) VALUES
     ('Cloudflare',    'cloudflare',   'Global CDN and DDoS protection'),
     ('聚合',           'juhe',         '中國聚合 CDN 加速服務'),
@@ -1239,11 +1215,31 @@ INSERT INTO cdn_providers (name, provider_type, description) VALUES
     ('Fastly',        'fastly',       'Fastly edge cloud platform')
 ON CONFLICT (provider_type, name) DO NOTHING;
 
--- Five roles per ADR-0003 D7
-INSERT INTO roles (name, description) VALUES
-    ('viewer',          'Read-only access to all resources'),
-    ('operator',        'Can manage domains, templates, host groups, and trigger releases'),
-    ('release_manager', 'Can approve releases and manage release policies'),
-    ('admin',           'Full access including user management and system configuration'),
-    ('auditor',         'Read-only access plus audit log visibility')
-ON CONFLICT (name) DO NOTHING;
+-- GFW bogon IPs
+INSERT INTO gfw_bogon_ips (ip_address, source, note) VALUES
+    ('1.2.3.4',          'seeded', 'Classic GFW bogon — used in DNS injection since ~2010'),
+    ('37.235.1.174',     'seeded', 'GFW DNS injection — FreeDNS range hijacked'),
+    ('8.7.198.45',       'seeded', 'GFW DNS injection — bogon returned for blocked domains'),
+    ('46.82.174.68',     'seeded', 'GFW DNS injection — confirmed by OONI measurements'),
+    ('78.16.49.15',      'seeded', 'GFW DNS injection — repeated in OONI CN data'),
+    ('93.46.8.89',       'seeded', 'GFW DNS injection — CN ISP bogon range'),
+    ('93.46.8.90',       'seeded', 'GFW DNS injection — CN ISP bogon range'),
+    ('243.185.187.39',   'seeded', 'GFW DNS injection — non-routable bogon'),
+    ('243.185.187.30',   'seeded', 'GFW DNS injection — non-routable bogon'),
+    ('0.0.0.0',          'seeded', 'Null route — used by some CN ISPs for blocking'),
+    ('127.0.0.1',        'seeded', 'Localhost — used by some CN ISPs for NXDOMAIN substitute')
+ON CONFLICT (ip_address) DO NOTHING;
+
+-- Seed admin user (password: admin123 — change immediately in production)
+INSERT INTO users (username, password_hash, display_name, status)
+VALUES (
+    'admin',
+    '$2a$10$bz3qqxgmzD2u7Yd0InN8r.fEiT7VTe7VSyCPh420v06dvCAkCTGAG',
+    'System Admin',
+    'active'
+) ON CONFLICT (username) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, r.id FROM users u, roles r
+WHERE u.username = 'admin' AND r.name = 'admin'
+ON CONFLICT (user_id, role_id) DO NOTHING;

@@ -42,6 +42,11 @@ import (
 	tmplsvc "domain-platform/internal/template"
 	pkgstorage "domain-platform/pkg/storage"
 	"domain-platform/store/postgres"
+
+	// Side-effect: register DNS provider factories in the global registry.
+	_ "domain-platform/pkg/provider/dns"
+	// Side-effect: register registrar provider factories (GoDaddy, etc.).
+	_ "domain-platform/pkg/provider/registrar"
 )
 
 func main() {
@@ -115,7 +120,7 @@ func main() {
 	agentHandler := handler.NewAgentHandler(agentSvc, logger)
 
 	registrarStore := postgres.NewRegistrarStore(db)
-	registrarSvc := registrar.NewService(registrarStore, logger)
+	registrarSvc := registrar.NewService(registrarStore, domainStore, logger)
 	registrarHandler := handler.NewRegistrarHandler(registrarSvc, logger)
 
 	cdnStore := postgres.NewCDNStore(db)

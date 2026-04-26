@@ -400,15 +400,27 @@ func joinStrings(ss []string, sep string) string {
 	return out
 }
 
+// DomainListRow is returned by ListEnriched. It embeds Domain and adds
+// denormalised display names resolved via LEFT JOINs so the handler does
+// not need to issue N+1 queries.
+type DomainListRow struct {
+	Domain
+	RegistrarName    *string `db:"registrar_name"`
+	CDNAccountName   *string `db:"cdn_account_name"`
+	CDNProviderType  *string `db:"cdn_provider_type"`
+}
+
 // ListFilter holds optional filters for querying domains.
 type ListFilter struct {
 	ProjectID      *int64
 	RegistrarID    *int64 // matches via registrar_accounts.registrar_id
 	DNSProviderID  *int64
 	CDNAccountID   *int64
+	CDNProviderID  *int64 // matches via cdn_accounts.cdn_provider_id
 	TLD            *string
 	ExpiryStatus   *string
 	LifecycleState *string
+	Purpose        *string
 	TagID          *int64 // matches via domain_tags join
 	Cursor         int64
 	Limit          int
@@ -447,6 +459,11 @@ func (s *DomainStore) ListWithFilter(ctx context.Context, f ListFilter) ([]Domai
 		args = append(args, *f.CDNAccountID)
 		n++
 	}
+	if f.CDNProviderID != nil {
+		q += fmt.Sprintf(` AND d.cdn_account_id IN (SELECT id FROM cdn_accounts WHERE cdn_provider_id = $%d AND deleted_at IS NULL)`, n)
+		args = append(args, *f.CDNProviderID)
+		n++
+	}
 	if f.TLD != nil {
 		q += fmt.Sprintf(` AND d.tld = $%d`, n)
 		args = append(args, *f.TLD)
@@ -460,6 +477,11 @@ func (s *DomainStore) ListWithFilter(ctx context.Context, f ListFilter) ([]Domai
 	if f.LifecycleState != nil {
 		q += fmt.Sprintf(` AND d.lifecycle_state = $%d`, n)
 		args = append(args, *f.LifecycleState)
+		n++
+	}
+	if f.Purpose != nil {
+		q += fmt.Sprintf(` AND d.purpose = $%d`, n)
+		args = append(args, *f.Purpose)
 		n++
 	}
 	if f.TagID != nil {
@@ -504,6 +526,11 @@ func (s *DomainStore) CountWithFilter(ctx context.Context, f ListFilter) (int64,
 		args = append(args, *f.CDNAccountID)
 		n++
 	}
+	if f.CDNProviderID != nil {
+		q += fmt.Sprintf(` AND d.cdn_account_id IN (SELECT id FROM cdn_accounts WHERE cdn_provider_id = $%d AND deleted_at IS NULL)`, n)
+		args = append(args, *f.CDNProviderID)
+		n++
+	}
 	if f.TLD != nil {
 		q += fmt.Sprintf(` AND d.tld = $%d`, n)
 		args = append(args, *f.TLD)
@@ -519,6 +546,11 @@ func (s *DomainStore) CountWithFilter(ctx context.Context, f ListFilter) (int64,
 		args = append(args, *f.LifecycleState)
 		n++
 	}
+	if f.Purpose != nil {
+		q += fmt.Sprintf(` AND d.purpose = $%d`, n)
+		args = append(args, *f.Purpose)
+		n++
+	}
 	if f.TagID != nil {
 		q += fmt.Sprintf(` AND d.id IN (SELECT domain_id FROM domain_tags WHERE tag_id = $%d)`, n)
 		args = append(args, *f.TagID)
@@ -530,6 +562,108 @@ func (s *DomainStore) CountWithFilter(ctx context.Context, f ListFilter) (int64,
 		return 0, fmt.Errorf("count domains with filter: %w", err)
 	}
 	return count, nil
+}
+
+// enrichedDomainSelect is the SELECT column list for ListEnriched queries.
+// All domain columns are prefixed with "d." to avoid ambiguity in the multi-
+// table JOIN, then three additional denormalised columns are appended.
+const enrichedDomainSelect = `d.id, d.uuid, d.project_id, d.fqdn, d.lifecycle_state, d.owner_user_id,
+	d.tld, d.registrar_account_id, d.dns_provider_id, d.cdn_account_id, d.origin_ips,
+	d.registration_date, d.expiry_date, d.auto_renew, d.grace_end_date, d.expiry_status,
+	d.transfer_lock, d.hold,
+	d.transfer_status, d.transfer_gaining_registrar, d.transfer_requested_at, d.transfer_completed_at, d.last_transfer_at, d.last_renewed_at,
+	d.nameservers, d.dnssec_enabled,
+	d.whois_privacy, d.registrant_contact, d.admin_contact, d.tech_contact,
+	d.annual_cost, d.currency, d.purchase_price, d.fee_fixed,
+	d.purpose, d.notes, d.metadata,
+	d.last_sync_at, d.last_drift_at,
+	d.created_at, d.updated_at, d.deleted_at,
+	r.name     AS registrar_name,
+	ca.account_name AS cdn_account_name,
+	cp.provider_type AS cdn_provider_type`
+
+// enrichedDomainJoins contains the LEFT JOIN clauses used by ListEnriched.
+const enrichedDomainJoins = `
+	LEFT JOIN registrar_accounts ra ON d.registrar_account_id = ra.id AND ra.deleted_at IS NULL
+	LEFT JOIN registrars r           ON ra.registrar_id = r.id   AND r.deleted_at IS NULL
+	LEFT JOIN cdn_accounts ca        ON d.cdn_account_id = ca.id  AND ca.deleted_at IS NULL
+	LEFT JOIN cdn_providers cp       ON ca.cdn_provider_id = cp.id AND cp.deleted_at IS NULL`
+
+// ListEnriched returns domains with denormalised registrar and CDN display names.
+// It applies the same filter set as ListWithFilter and uses cursor pagination.
+func (s *DomainStore) ListEnriched(ctx context.Context, f ListFilter) ([]DomainListRow, error) {
+	if f.Limit <= 0 {
+		f.Limit = 20
+	}
+	if f.Limit > 200 {
+		f.Limit = 200
+	}
+
+	q := `SELECT ` + enrichedDomainSelect + `
+	FROM domains d` + enrichedDomainJoins + `
+	WHERE d.deleted_at IS NULL AND d.id > $1`
+	args := []any{f.Cursor}
+	n := 2
+
+	if f.ProjectID != nil {
+		q += fmt.Sprintf(` AND d.project_id = $%d`, n)
+		args = append(args, *f.ProjectID)
+		n++
+	}
+	if f.RegistrarID != nil {
+		q += fmt.Sprintf(` AND d.registrar_account_id IN (SELECT id FROM registrar_accounts WHERE registrar_id = $%d AND deleted_at IS NULL)`, n)
+		args = append(args, *f.RegistrarID)
+		n++
+	}
+	if f.DNSProviderID != nil {
+		q += fmt.Sprintf(` AND d.dns_provider_id = $%d`, n)
+		args = append(args, *f.DNSProviderID)
+		n++
+	}
+	if f.CDNAccountID != nil {
+		q += fmt.Sprintf(` AND d.cdn_account_id = $%d`, n)
+		args = append(args, *f.CDNAccountID)
+		n++
+	}
+	if f.CDNProviderID != nil {
+		q += fmt.Sprintf(` AND d.cdn_account_id IN (SELECT id FROM cdn_accounts WHERE cdn_provider_id = $%d AND deleted_at IS NULL)`, n)
+		args = append(args, *f.CDNProviderID)
+		n++
+	}
+	if f.TLD != nil {
+		q += fmt.Sprintf(` AND d.tld = $%d`, n)
+		args = append(args, *f.TLD)
+		n++
+	}
+	if f.ExpiryStatus != nil {
+		q += fmt.Sprintf(` AND d.expiry_status = $%d`, n)
+		args = append(args, *f.ExpiryStatus)
+		n++
+	}
+	if f.LifecycleState != nil {
+		q += fmt.Sprintf(` AND d.lifecycle_state = $%d`, n)
+		args = append(args, *f.LifecycleState)
+		n++
+	}
+	if f.Purpose != nil {
+		q += fmt.Sprintf(` AND d.purpose = $%d`, n)
+		args = append(args, *f.Purpose)
+		n++
+	}
+	if f.TagID != nil {
+		q += fmt.Sprintf(` AND d.id IN (SELECT domain_id FROM domain_tags WHERE tag_id = $%d)`, n)
+		args = append(args, *f.TagID)
+		n++
+	}
+
+	q += fmt.Sprintf(` ORDER BY d.id ASC LIMIT $%d`, n)
+	args = append(args, f.Limit)
+
+	var rows []DomainListRow
+	if err := s.db.SelectContext(ctx, &rows, q, args...); err != nil {
+		return nil, fmt.Errorf("list domains enriched: %w", err)
+	}
+	return rows, nil
 }
 
 // RegistrarCount is used by GetStats.
@@ -698,4 +832,39 @@ func (s *DomainStore) UpdateLastSyncAt(ctx context.Context, domainID int64) erro
 		return fmt.Errorf("update last_sync_at: %w", err)
 	}
 	return nil
+}
+
+// UpdateDomainDates sets registration_date, expiry_date, and auto_renew for a
+// domain identified by its FQDN and registrar_account_id.
+//
+// Returns (true, nil) when the row was found and updated.
+// Returns (false, nil) when no matching row exists (domain not in our DB).
+func (s *DomainStore) UpdateDomainDates(
+	ctx context.Context,
+	fqdn string,
+	registrarAccountID int64,
+	registrationDate *time.Time,
+	expiryDate *time.Time,
+	autoRenew bool,
+) (updated bool, err error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE domains
+		    SET registration_date = $3,
+		        expiry_date       = $4,
+		        auto_renew        = $5,
+		        last_sync_at      = NOW(),
+		        updated_at        = NOW()
+		  WHERE fqdn = $1
+		    AND registrar_account_id = $2
+		    AND deleted_at IS NULL`,
+		fqdn, registrarAccountID, registrationDate, expiryDate, autoRenew,
+	)
+	if err != nil {
+		return false, fmt.Errorf("update domain dates %s: %w", fqdn, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n > 0, nil
 }

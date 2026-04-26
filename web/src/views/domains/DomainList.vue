@@ -5,7 +5,7 @@ import type { DataTableColumns, SelectOption } from 'naive-ui'
 import type { VNodeChild } from 'vue'
 import {
   NButton, NModal, NCard, NForm, NFormItem, NInput, NSelect,
-  NDatePicker, NSwitch, NInputNumber, NSpace, useMessage,
+  NDatePicker, NSwitch, NInputNumber, NSpace, NTag, useMessage,
 } from 'naive-ui'
 import { AppTable, PageHeader, StatusTag, PageHint } from '@/components'
 import { useDomainStore } from '@/stores/domain'
@@ -15,6 +15,7 @@ import { useDNSProviderStore } from '@/stores/dnsprovider'
 import { useCDNStore } from '@/stores/cdn'
 import { useTagStore } from '@/stores/tag'
 import { tagApi } from '@/api/tag'
+import { CDN_PROVIDER_TYPES } from '@/api/cdn'
 import type { DomainResponse, RegisterDomainRequest } from '@/types/domain'
 
 const route    = useRoute()
@@ -34,9 +35,11 @@ const selectedProjectId = ref<number | null>(routeProjectId ? Number(routeProjec
 // ── Filters ───────────────────────────────────────────────────────────────────
 const filterRegistrar    = ref<number | null>(null)
 const filterDNSProvider  = ref<number | null>(null)
+const filterCDNProvider  = ref<number | null>(null)
 const filterTLD          = ref<string>('')
 const filterState        = ref<string | null>(null)
 const filterExpiryStatus = ref<string | null>(null)
+const filterPurpose      = ref<string | null>(null)
 const filterTagId        = ref<number | null>(null)
 const checkedRowKeys     = ref<number[]>([])
 
@@ -48,6 +51,9 @@ const registrarOptions = computed(() =>
 )
 const dnsProviderOptions = computed(() =>
   dnsProviders.providers.map(p => ({ label: p.name, value: p.id }))
+)
+const cdnProviderOptions = computed(() =>
+  cdnStore.providers.map(p => ({ label: p.name, value: p.id }))
 )
 const tagOptions = computed(() =>
   tagStore.tags.map(t => ({ label: t.name, value: t.id }))
@@ -70,6 +76,25 @@ const expiryStatusOptions: SelectOption[] = [
   { label: 'Grace',       value: 'grace'         },
 ]
 
+const purposeOptions: SelectOption[] = [
+  { label: '直播',  value: '直播'  },
+  { label: '備用',  value: '備用'  },
+  { label: '測試',  value: '測試'  },
+  { label: '主站',  value: '主站'  },
+  { label: '活動',  value: '活動'  },
+  { label: 'API',   value: 'api'  },
+  { label: '其他',  value: '其他'  },
+]
+
+const purposeTagType: Record<string, 'info' | 'success' | 'warning' | 'error' | 'default'> = {
+  '直播': 'error',
+  '備用': 'warning',
+  '測試': 'default',
+  '主站': 'success',
+  '活動': 'info',
+  'api':  'info',
+}
+
 const selectedProjectName = computed(() => {
   if (routeProjectId) return projects.current?.name ?? `專案 #${routeProjectId}`
   if (selectedProjectId.value)
@@ -77,14 +102,23 @@ const selectedProjectName = computed(() => {
   return ''
 })
 
+// CDN provider_type → human-readable label lookup map
+const cdnProviderTypeLabel = computed(() => {
+  const m: Record<string, string> = {}
+  for (const t of CDN_PROVIDER_TYPES) m[t.value] = t.label
+  return m
+})
+
 function loadDomains() {
   store.fetchList({
     project_id:      selectedProjectId.value ?? undefined,
     registrar_id:    filterRegistrar.value ?? undefined,
     dns_provider_id: filterDNSProvider.value ?? undefined,
+    cdn_provider_id: filterCDNProvider.value ?? undefined,
     tld:             filterTLD.value || undefined,
     lifecycle_state: filterState.value ?? undefined,
     expiry_status:   filterExpiryStatus.value ?? undefined,
+    purpose:         filterPurpose.value ?? undefined,
     tag_id:          filterTagId.value ?? undefined,
     limit: 50,
   })
@@ -103,11 +137,13 @@ async function handleBulkAddTags(tagIds: number[]) {
 }
 
 function handleExport() {
-  const url = tagApi.exportUrl({
-    ...(selectedProjectId.value ? { project_id: String(selectedProjectId.value) } : {}),
-    ...(filterTagId.value ? { tag_id: String(filterTagId.value) } : {}),
-    ...(filterState.value ? { lifecycle_state: filterState.value } : {}),
-  })
+  const params: Record<string, string> = {}
+  if (selectedProjectId.value)   params.project_id     = String(selectedProjectId.value)
+  if (filterTagId.value)         params.tag_id         = String(filterTagId.value)
+  if (filterState.value)         params.lifecycle_state = filterState.value
+  if (filterPurpose.value)       params.purpose        = filterPurpose.value
+  if (filterCDNProvider.value)   params.cdn_provider_id = String(filterCDNProvider.value)
+  const url = tagApi.exportUrl(params)
   window.open(url, '_blank')
 }
 
@@ -185,25 +221,38 @@ async function handleCreate() {
 const columns: DataTableColumns<DomainResponse> = [
   { type: 'selection' },
   { title: '域名', key: 'fqdn', ellipsis: { tooltip: true }, minWidth: 200 },
-  { title: 'TLD', key: 'tld', width: 100,
+  { title: 'TLD', key: 'tld', width: 80,
     render: (row) => row.tld ?? '-' },
-  { title: '狀態', key: 'lifecycle_state', width: 130,
+  { title: '狀態', key: 'lifecycle_state', width: 110,
     render: (row) => h(StatusTag, { status: row.lifecycle_state }) },
-  { title: 'DNS Provider', key: 'dns_provider_id', width: 140,
-    render: (row) => row.dns_provider_id ? `#${row.dns_provider_id}` : '-' },
-  { title: 'CDN 帳號', key: 'cdn_account_id', width: 140,
+  { title: '用途', key: 'purpose', width: 80,
     render: (row): VNodeChild => {
-      if (!row.cdn_account_id) return '-'
-      const acct = cdnStore.allAccounts.find(a => a.id === row.cdn_account_id)
-      return acct ? acct.account_name : `#${row.cdn_account_id}`
+      if (!row.purpose) return '-'
+      const type = purposeTagType[row.purpose] ?? 'default'
+      return h(NTag, { size: 'small', type, bordered: false }, { default: () => row.purpose! })
     },
   },
-  { title: '源站 IP', key: 'origin_ips', width: 160,
+  { title: 'Registrar', key: 'registrar_name', width: 130,
+    render: (row): VNodeChild => row.registrar_name ?? '-',
+  },
+  { title: 'CDN', key: 'cdn', width: 180,
+    render: (row): VNodeChild => {
+      if (!row.cdn_provider_type && !row.cdn_account_name) return '-'
+      const parts: VNodeChild[] = []
+      if (row.cdn_provider_type) {
+        const label = cdnProviderTypeLabel.value[row.cdn_provider_type] ?? row.cdn_provider_type
+        parts.push(h(NTag, { size: 'small', type: 'info', bordered: false, style: 'margin-right:4px' }, { default: () => label }))
+      }
+      if (row.cdn_account_name) parts.push(row.cdn_account_name as string)
+      return h('span', { style: 'display:flex;align-items:center;gap:4px' }, parts)
+    },
+  },
+  { title: '源站 IP', key: 'origin_ips', width: 150, ellipsis: { tooltip: true },
     render: (row): VNodeChild => (row.origin_ips ?? []).length > 0
       ? (row.origin_ips as string[]).join(', ')
       : '-',
   },
-  { title: '到期日', key: 'expiry_date', width: 120,
+  { title: '到期日', key: 'expiry_date', width: 110,
     render: (row): VNodeChild => {
       if (!row.expiry_date) return '-'
       const d = new Date(row.expiry_date)
@@ -215,7 +264,7 @@ const columns: DataTableColumns<DomainResponse> = [
       return text
     },
   },
-  { title: '自動續約', key: 'auto_renew', width: 90,
+  { title: '自動續約', key: 'auto_renew', width: 80,
     render: (row) => row.auto_renew ? '✓' : '✗' },
   { title: '年費', key: 'annual_cost', width: 100,
     render: (row) => row.annual_cost != null
@@ -235,6 +284,7 @@ onMounted(async () => {
   await Promise.all([
     registrars.fetchList(),
     dnsProviders.fetchList(),
+    cdnStore.fetchList(),
     cdnStore.fetchAllAccounts(),
     tagStore.fetchList(),
     routeProjectId ? null : projects.fetchList(),
@@ -278,7 +328,15 @@ onMounted(async () => {
         :options="stateOptions"
         placeholder="狀態篩選"
         clearable
-        style="width: 140px"
+        style="width: 130px"
+        @update:value="loadDomains"
+      />
+      <NSelect
+        v-model:value="filterPurpose"
+        :options="purposeOptions"
+        placeholder="用途"
+        clearable
+        style="width: 110px"
         @update:value="loadDomains"
       />
       <NSelect
@@ -286,7 +344,7 @@ onMounted(async () => {
         :options="registrarOptions"
         placeholder="Registrar"
         clearable
-        style="width: 160px"
+        style="width: 150px"
         @update:value="loadDomains"
       />
       <NSelect
@@ -294,14 +352,22 @@ onMounted(async () => {
         :options="dnsProviderOptions"
         placeholder="DNS Provider"
         clearable
-        style="width: 160px"
+        style="width: 150px"
+        @update:value="loadDomains"
+      />
+      <NSelect
+        v-model:value="filterCDNProvider"
+        :options="cdnProviderOptions"
+        placeholder="CDN 供應商"
+        clearable
+        style="width: 150px"
         @update:value="loadDomains"
       />
       <NInput
         v-model:value="filterTLD"
         placeholder="TLD (e.g. .com)"
         clearable
-        style="width: 130px"
+        style="width: 120px"
         @change="loadDomains"
       />
       <NSelect
@@ -309,7 +375,7 @@ onMounted(async () => {
         :options="expiryStatusOptions"
         placeholder="到期狀態"
         clearable
-        style="width: 140px"
+        style="width: 130px"
         @update:value="loadDomains"
       />
       <NSelect
@@ -317,7 +383,7 @@ onMounted(async () => {
         :options="tagOptions"
         placeholder="標籤"
         clearable
-        style="width: 140px"
+        style="width: 130px"
         @update:value="loadDomains"
       />
     </div>

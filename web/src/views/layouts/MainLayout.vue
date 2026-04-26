@@ -52,9 +52,9 @@ const navGroups: NavGroup[] = [
   {
     groupLabel: '資產管理',
     items: [
-      { label: 'Registrar 管理',    key: '/registrars',    icon: 'briefcase' },
-      { label: 'DNS Provider 管理', key: '/dns-providers', icon: 'dns'       },
-      { label: 'CDN 供應商管理',    key: '/cdn-providers', icon: 'cdn'       },
+      { label: '域名註冊商管理',  key: '/registrars',    icon: 'briefcase' },
+      { label: 'DNS 供應商管理',  key: '/dns-providers', icon: 'dns'       },
+      { label: 'CDN 供應商管理',  key: '/cdn-providers', icon: 'cdn'       },
     ],
   },
   {

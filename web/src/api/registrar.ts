@@ -6,6 +6,7 @@ import type {
   UpdateRegistrarRequest,
   CreateRegistrarAccountRequest,
   UpdateRegistrarAccountRequest,
+  SyncResult,
 } from '@/types/registrar'
 import type { PaginatedData } from '@/types/common'
 
@@ -44,6 +45,9 @@ export const registrarApi = {
 
   deleteAccount: (id: number) =>
     http.delete(`/registrar-accounts/${id}`),
+
+  syncAccount: (id: number) =>
+    http.post<SyncResult>(`/registrar-accounts/${id}/sync`, {}),
 }
 
 // Re-export PaginatedData for convenience

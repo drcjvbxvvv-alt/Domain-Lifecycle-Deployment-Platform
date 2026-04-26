@@ -14,9 +14,11 @@ export type DomainListParams = {
   project_id?:      number
   registrar_id?:    number
   dns_provider_id?: number
+  cdn_provider_id?: number
   tld?:             string
   expiry_status?:   string
   lifecycle_state?: string
+  purpose?:         string
   tag_id?:          number
   cursor?:          number
   limit?:           number

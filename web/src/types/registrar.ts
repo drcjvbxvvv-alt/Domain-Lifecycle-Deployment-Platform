@@ -57,3 +57,28 @@ export interface UpdateRegistrarAccountRequest {
   is_default?: boolean
   notes?: string | null
 }
+
+// ── Sync ────────────────────────────────────────────────────────────────────
+
+export interface SyncItemError {
+  fqdn: string
+  message: string
+}
+
+export interface SyncResult {
+  total: number
+  updated: number
+  not_found: string[]
+  errors?: SyncItemError[]
+}
+
+// ── GoDaddy credentials shape ────────────────────────────────────────────────
+// Used by the credential editor in RegistrarDetail.vue for api_type === 'godaddy'
+
+// GoDaddyCredentials field names match exactly what GoDaddy's developer portal
+// labels them — "Key" and "Secret" (developer.godaddy.com/keys).
+export interface GoDaddyCredentials {
+  key: string
+  secret: string
+  environment: 'production' | 'ote'
+}

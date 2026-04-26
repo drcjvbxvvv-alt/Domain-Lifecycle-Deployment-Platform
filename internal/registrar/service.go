@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 
+	registrarprovider "domain-platform/pkg/provider/registrar"
 	"domain-platform/store/postgres"
 )
 
@@ -16,15 +18,31 @@ var (
 	ErrAccountNotFound  = errors.New("registrar account not found")
 	ErrDuplicateName    = errors.New("registrar name already exists")
 	ErrHasDependents    = errors.New("registrar has dependent accounts or domains — detach first")
+
+	// Provider-level errors surfaced by SyncAccount.
+	// Defined here so callers (e.g. the HTTP handler) can check them
+	// without importing pkg/provider/registrar directly.
+	ErrCredentialsRejected  = errors.New("registrar API credentials rejected — check your Key and Secret")
+	ErrCredentialsMissing   = errors.New("registrar account credentials are missing or invalid")
+	ErrProviderNotSupported = errors.New("registrar api_type is not supported")
+	ErrRateLimitExceeded    = errors.New("registrar API rate limit exceeded")
 )
 
-type Service struct {
-	store  *postgres.RegistrarStore
-	logger *zap.Logger
+// domainDateUpdater is the subset of DomainStore used by SyncAccount.
+// Defined as an interface so tests can inject a mock.
+type domainDateUpdater interface {
+	UpdateDomainDates(ctx context.Context, fqdn string, registrarAccountID int64,
+		registrationDate *time.Time, expiryDate *time.Time, autoRenew bool) (bool, error)
 }
 
-func NewService(store *postgres.RegistrarStore, logger *zap.Logger) *Service {
-	return &Service{store: store, logger: logger}
+type Service struct {
+	store       *postgres.RegistrarStore
+	domainStore domainDateUpdater
+	logger      *zap.Logger
+}
+
+func NewService(store *postgres.RegistrarStore, domainStore domainDateUpdater, logger *zap.Logger) *Service {
+	return &Service{store: store, domainStore: domainStore, logger: logger}
 }
 
 // ── Registrar ────────────────────────────────────────────────────────────────
@@ -265,4 +283,118 @@ func (s *Service) DeleteAccount(ctx context.Context, id int64) error {
 	}
 	s.logger.Info("registrar account deleted", zap.Int64("id", id))
 	return nil
+}
+
+// ── Sync ──────────────────────────────────────────────────────────────────────
+
+// SyncResult summarises the outcome of a SyncAccount call.
+type SyncResult struct {
+	// Total is the number of domains returned by the registrar API.
+	Total int `json:"total"`
+	// Updated is the number of domains whose dates were written to our DB.
+	Updated int `json:"updated"`
+	// NotFound holds FQDNs that exist in the registrar but are not in our DB
+	// under this account. They are reported but not created automatically.
+	NotFound []string `json:"not_found"`
+	// Errors holds per-domain error messages that did not abort the sync.
+	Errors []SyncItemError `json:"errors,omitempty"`
+}
+
+// SyncItemError records a non-fatal per-domain error during sync.
+type SyncItemError struct {
+	FQDN    string `json:"fqdn"`
+	Message string `json:"message"`
+}
+
+// ErrNoAPIType is returned when the registrar has no api_type set.
+var ErrNoAPIType = errors.New("registrar has no api_type configured")
+
+// SyncAccount fetches all domains from the registrar API for the given account
+// and updates registration_date, expiry_date, and auto_renew in the domains table.
+//
+// Domains returned by the API that are not found in our DB are recorded in
+// SyncResult.NotFound — they are NOT automatically created.
+func (s *Service) SyncAccount(ctx context.Context, accountID int64) (*SyncResult, error) {
+	// 1. Load account (credentials) and its parent registrar (api_type).
+	account, err := s.store.GetAccountByID(ctx, accountID)
+	if errors.Is(err, postgres.ErrRegistrarAccountNotFound) {
+		return nil, ErrAccountNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get account: %w", err)
+	}
+
+	reg, err := s.store.GetByID(ctx, account.RegistrarID)
+	if errors.Is(err, postgres.ErrRegistrarNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get registrar: %w", err)
+	}
+
+	if reg.APIType == nil || strings.TrimSpace(*reg.APIType) == "" {
+		return nil, ErrNoAPIType
+	}
+
+	// 2. Build provider from api_type + credentials.
+	provider, err := registrarprovider.Get(*reg.APIType, account.Credentials)
+	if err != nil {
+		if errors.Is(err, registrarprovider.ErrProviderNotRegistered) {
+			return nil, fmt.Errorf("%w: %s", ErrProviderNotSupported, *reg.APIType)
+		}
+		if errors.Is(err, registrarprovider.ErrMissingCredentials) {
+			return nil, ErrCredentialsMissing
+		}
+		return nil, fmt.Errorf("build provider: %w", err)
+	}
+
+	// 3. Fetch domain list from registrar.
+	domains, err := provider.ListDomains(ctx)
+	if err != nil {
+		if errors.Is(err, registrarprovider.ErrUnauthorized) {
+			return nil, ErrCredentialsRejected
+		}
+		if errors.Is(err, registrarprovider.ErrMissingCredentials) {
+			return nil, ErrCredentialsMissing
+		}
+		if errors.Is(err, registrarprovider.ErrRateLimitExceeded) {
+			return nil, ErrRateLimitExceeded
+		}
+		return nil, fmt.Errorf("list domains from registrar: %w", err)
+	}
+
+	result := &SyncResult{
+		Total:    len(domains),
+		NotFound: []string{},
+	}
+
+	// 4. Update each domain's dates in our DB.
+	for _, d := range domains {
+		updated, err := s.domainStore.UpdateDomainDates(
+			ctx, d.FQDN, accountID,
+			d.RegistrationDate, d.ExpiryDate, d.AutoRenew,
+		)
+		if err != nil {
+			result.Errors = append(result.Errors, SyncItemError{
+				FQDN:    d.FQDN,
+				Message: err.Error(),
+			})
+			continue
+		}
+		if !updated {
+			result.NotFound = append(result.NotFound, d.FQDN)
+		} else {
+			result.Updated++
+		}
+	}
+
+	s.logger.Info("registrar account synced",
+		zap.Int64("account_id", accountID),
+		zap.String("registrar", reg.Name),
+		zap.Int("total", result.Total),
+		zap.Int("updated", result.Updated),
+		zap.Int("not_found", len(result.NotFound)),
+	)
+
+	return result, nil
 }

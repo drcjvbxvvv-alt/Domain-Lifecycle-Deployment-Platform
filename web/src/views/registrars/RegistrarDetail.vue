@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref, h } from 'vue'
+import { onMounted, ref, h, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { DataTableColumns } from 'naive-ui'
 import type { VNodeChild } from 'vue'
 import {
   NButton, NSpace, NModal, NForm, NFormItem, NInput, NSwitch,
   NPopconfirm, NDescriptions, NDescriptionsItem, NSpin, NAlert,
+  NSelect, NTag, NDivider, NStatistic, NGrid, NGridItem,
+  NList, NListItem, NText, NEllipsis,
   useMessage,
 } from 'naive-ui'
 import { AppTable, PageHeader } from '@/components'
@@ -13,11 +15,13 @@ import { useRegistrarStore } from '@/stores/registrar'
 import type {
   RegistrarAccountResponse,
   CreateRegistrarAccountRequest,
+  GoDaddyCredentials,
+  SyncResult,
 } from '@/types/registrar'
 
-const route  = useRoute()
-const router = useRouter()
-const store  = useRegistrarStore()
+const route   = useRoute()
+const router  = useRouter()
+const store   = useRegistrarStore()
 const message = useMessage()
 
 const registrarId = Number(route.params.id)
@@ -25,7 +29,20 @@ const registrarId = Number(route.params.id)
 // ── Edit registrar modal ──────────────────────────────────────────────────────
 const showEdit = ref(false)
 const saving   = ref(false)
-const editForm = ref({ name: '', url: null as string | null, api_type: null as string | null, notes: null as string | null })
+const editForm = ref({
+  name:     '',
+  url:      null as string | null,
+  api_type: null as string | null,
+  notes:    null as string | null,
+})
+
+const apiTypeOptions = [
+  { label: 'GoDaddy', value: 'godaddy' },
+  { label: 'Namecheap', value: 'namecheap' },
+  { label: '阿里雲萬網', value: 'aliyun' },
+  { label: '騰訊雲', value: 'tencentcloud' },
+  { label: '其他 (手動)', value: 'manual' },
+]
 
 function openEdit() {
   if (!store.current) return
@@ -62,10 +79,11 @@ const accountForm = ref<CreateRegistrarAccountRequest>({
   account_name: '',
   is_default:   false,
   notes:        null,
+  credentials:  {},
 })
 
 function openCreateAccount() {
-  accountForm.value = { account_name: '', is_default: false, notes: null }
+  accountForm.value = { account_name: '', is_default: false, notes: null, credentials: {} }
   showCreateAccount.value = true
 }
 
@@ -96,24 +114,125 @@ async function deleteAccount(id: number) {
   }
 }
 
-// ── Table columns for accounts ────────────────────────────────────────────────
+// ── Edit credentials modal ────────────────────────────────────────────────────
+const showCredentials = ref(false)
+const credAccountId   = ref<number | null>(null)
+const credAccountName = ref('')
+const savingCreds     = ref(false)
+
+// GoDaddy specific form
+const godaddyForm = ref<GoDaddyCredentials>({
+  key:         '',
+  secret:      '',
+  environment: 'production',
+})
+const godaddyEnvOptions = [
+  { label: '正式環境 (Production)', value: 'production' },
+  { label: '沙盒環境 (OTE)', value: 'ote' },
+]
+
+// Generic JSON fallback
+const rawCredsJSON = ref('')
+const credsJSONError = ref('')
+
+const isGoDaddy = computed(() => store.current?.api_type === 'godaddy')
+
+function openCredentials(account: RegistrarAccountResponse) {
+  credAccountId.value   = account.id
+  credAccountName.value = account.account_name
+  godaddyForm.value     = { key: '', secret: '', environment: 'production' }
+  rawCredsJSON.value    = '{}'
+  credsJSONError.value  = ''
+  showCredentials.value = true
+}
+
+async function submitCredentials() {
+  if (credAccountId.value === null) return
+
+  let credentials: Record<string, unknown>
+  if (isGoDaddy.value) {
+    if (!godaddyForm.value.key.trim() || !godaddyForm.value.secret.trim()) {
+      message.warning('Key 和 Secret 不能為空')
+      return
+    }
+    credentials = { ...godaddyForm.value }
+  } else {
+    try {
+      credentials = JSON.parse(rawCredsJSON.value)
+      credsJSONError.value = ''
+    } catch {
+      credsJSONError.value = 'JSON 格式錯誤'
+      return
+    }
+  }
+
+  savingCreds.value = true
+  try {
+    await store.updateAccount(credAccountId.value, registrarId, {
+      account_name: credAccountName.value,
+      credentials,
+    })
+    message.success('憑證已更新')
+    showCredentials.value = false
+  } catch (e: any) {
+    message.error(e?.response?.data?.message ?? '更新失敗')
+  } finally {
+    savingCreds.value = false
+  }
+}
+
+// ── Sync ──────────────────────────────────────────────────────────────────────
+const syncingId     = ref<number | null>(null)
+const showSyncResult = ref(false)
+const syncResult    = ref<SyncResult | null>(null)
+
+async function handleSync(account: RegistrarAccountResponse) {
+  syncingId.value = account.id
+  try {
+    const result = await store.syncAccount(account.id)
+    syncResult.value    = result
+    showSyncResult.value = true
+  } catch (e: any) {
+    const msg = e?.response?.data?.message ?? e?.message ?? '同步失敗'
+    message.error(msg)
+  } finally {
+    syncingId.value = null
+  }
+}
+
+// ── Table columns ─────────────────────────────────────────────────────────────
 const accountColumns: DataTableColumns<RegistrarAccountResponse> = [
   { title: '帳號名稱', key: 'account_name', ellipsis: { tooltip: true } },
-  { title: '預設', key: 'is_default', width: 80,
-    render: (row) => row.is_default ? '✓' : '-' },
-  { title: '備注', key: 'notes', ellipsis: { tooltip: true },
-    render: (row) => row.notes ?? '-' },
-  { title: '建立時間', key: 'created_at', width: 180,
-    render: (row) => new Date(row.created_at).toLocaleString('zh-TW') },
   {
-    title: '操作', key: 'actions', width: 120, fixed: 'right',
-    render: (row): VNodeChild => h(NPopconfirm, {
-      onPositiveClick: () => deleteAccount(row.id),
-    }, {
-      trigger: () => h(NButton, {
-        size: 'small', type: 'error', ghost: true,
-      }, { default: () => '刪除' }),
-      default: () => '確定刪除此帳號？域名依附中將無法刪除。',
+    title: '預設', key: 'is_default', width: 70,
+    render: (row) => row.is_default ? h(NTag, { type: 'success', size: 'small' }, { default: () => '✓' }) : '-',
+  },
+  { title: '備注', key: 'notes', ellipsis: { tooltip: true }, render: (row) => row.notes ?? '-' },
+  {
+    title: '建立時間', key: 'created_at', width: 180,
+    render: (row) => new Date(row.created_at).toLocaleString('zh-TW'),
+  },
+  {
+    title: '操作', key: 'actions', width: 220, fixed: 'right',
+    render: (row): VNodeChild => h(NSpace, { size: 'small' }, {
+      default: () => [
+        h(NButton, {
+          size: 'small',
+          onClick: () => openCredentials(row),
+        }, { default: () => '設定憑證' }),
+        h(NButton, {
+          size: 'small',
+          type: 'primary',
+          loading: syncingId.value === row.id,
+          onClick: () => handleSync(row),
+        }, { default: () => '同步域名' }),
+        h(NPopconfirm, {
+          onPositiveClick: () => deleteAccount(row.id),
+        }, {
+          trigger: () => h(NButton, { size: 'small', type: 'error', ghost: true }, { default: () => '刪除' }),
+          default: () => '確定刪除此帳號？',
+        }),
+      ],
     }),
   },
 ]
@@ -139,14 +258,26 @@ onMounted(async () => {
       <!-- Registrar info -->
       <NDescriptions v-if="store.current" bordered :column="2" class="mb-4">
         <NDescriptionsItem label="UUID">{{ store.current.uuid }}</NDescriptionsItem>
-        <NDescriptionsItem label="API 類型">{{ store.current.api_type ?? '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="API 類型">
+          <NTag v-if="store.current.api_type" type="info" size="small">
+            {{ store.current.api_type }}
+          </NTag>
+          <span v-else class="text-gray">
+            未設定 — 請編輯並填寫 API 類型才能使用「同步域名」
+          </span>
+        </NDescriptionsItem>
         <NDescriptionsItem label="網址">{{ store.current.url ?? '-' }}</NDescriptionsItem>
-        <NDescriptionsItem label="建立時間">{{ new Date(store.current.created_at).toLocaleString('zh-TW') }}</NDescriptionsItem>
+        <NDescriptionsItem label="建立時間">
+          {{ new Date(store.current.created_at).toLocaleString('zh-TW') }}
+        </NDescriptionsItem>
         <NDescriptionsItem label="備注" :span="2">{{ store.current.notes ?? '-' }}</NDescriptionsItem>
       </NDescriptions>
 
       <!-- Accounts table -->
       <div class="section-title">帳號列表</div>
+      <NAlert v-if="!store.current?.api_type" type="warning" class="mb-3" style="margin-bottom:12px">
+        尚未設定 API 類型，無法同步域名。請先點擊「編輯」設定 API 類型（例如 godaddy）。
+      </NAlert>
       <AppTable
         :columns="accountColumns"
         :data="store.accounts"
@@ -155,11 +286,11 @@ onMounted(async () => {
       />
     </NSpin>
 
-    <!-- Edit registrar modal -->
+    <!-- ── Edit registrar modal ─────────────────────────────────────────── -->
     <NModal
       v-model:show="showEdit"
       preset="card"
-      title="編輯 Registrar"
+      title="編輯域名註冊商"
       style="width: 480px"
       :mask-closable="false"
     >
@@ -168,7 +299,12 @@ onMounted(async () => {
           <NInput v-model:value="editForm.name" />
         </NFormItem>
         <NFormItem label="API 類型">
-          <NInput v-model:value="(editForm as any).api_type" clearable />
+          <NSelect
+            v-model:value="(editForm as any).api_type"
+            :options="apiTypeOptions"
+            placeholder="選擇供應商類型"
+            clearable
+          />
         </NFormItem>
         <NFormItem label="網址">
           <NInput v-model:value="(editForm as any).url" clearable />
@@ -185,20 +321,17 @@ onMounted(async () => {
       </template>
     </NModal>
 
-    <!-- Create account modal -->
+    <!-- ── Create account modal ────────────────────────────────────────── -->
     <NModal
       v-model:show="showCreateAccount"
       preset="card"
-      title="新增 Registrar 帳號"
+      title="新增帳號"
       style="width: 480px"
       :mask-closable="false"
     >
-      <NAlert type="warning" class="mb-3">
-        Credentials（API 金鑰）請在帳號建立後另外填寫，或透過後台直接管理。
-      </NAlert>
       <NForm label-placement="left" label-width="100px" :model="accountForm">
         <NFormItem label="帳號名稱" required>
-          <NInput v-model:value="accountForm.account_name" placeholder="e.g. company-main" />
+          <NInput v-model:value="accountForm.account_name" placeholder="例：主帳號 GoDaddy" />
         </NFormItem>
         <NFormItem label="設為預設">
           <NSwitch v-model:value="accountForm.is_default" />
@@ -207,6 +340,9 @@ onMounted(async () => {
           <NInput v-model:value="(accountForm as any).notes" type="textarea" :rows="2" clearable />
         </NFormItem>
       </NForm>
+      <NAlert type="info" class="mb-3">
+        帳號建立後，點擊「設定憑證」填入 API Key/Secret。
+      </NAlert>
       <template #footer>
         <NSpace justify="end">
           <NButton @click="showCreateAccount = false">取消</NButton>
@@ -214,15 +350,147 @@ onMounted(async () => {
         </NSpace>
       </template>
     </NModal>
+
+    <!-- ── Credentials modal ────────────────────────────────────────────── -->
+    <NModal
+      v-model:show="showCredentials"
+      preset="card"
+      :title="`設定憑證 — ${credAccountName}`"
+      style="width: 520px"
+      :mask-closable="false"
+    >
+      <NAlert type="warning" style="margin-bottom:16px">
+        憑證儲存後伺服器端加密保存，API 回應不會返回憑證內容。
+      </NAlert>
+
+      <!-- GoDaddy specific fields -->
+      <template v-if="isGoDaddy">
+        <NForm label-placement="left" label-width="80px" :model="godaddyForm">
+          <NFormItem label="Key" required>
+            <NInput
+              v-model:value="godaddyForm.key"
+              placeholder="dKy4Gxxx..."
+              show-password-on="click"
+              type="password"
+            />
+          </NFormItem>
+          <NFormItem label="Secret" required>
+            <NInput
+              v-model:value="godaddyForm.secret"
+              placeholder="Sdxxx..."
+              show-password-on="click"
+              type="password"
+            />
+          </NFormItem>
+          <NFormItem label="環境">
+            <NSelect v-model:value="godaddyForm.environment" :options="godaddyEnvOptions" />
+          </NFormItem>
+        </NForm>
+        <NAlert type="info" style="margin-top:8px">
+          API Key 和 Secret 從
+          <a href="https://developer.godaddy.com/keys" target="_blank" rel="noopener">
+            developer.godaddy.com/keys
+          </a>
+          取得。OTE 為沙盒測試環境。
+        </NAlert>
+      </template>
+
+      <!-- Generic JSON fallback -->
+      <template v-else>
+        <NForm label-placement="top">
+          <NFormItem label="Credentials JSON">
+            <NInput
+              v-model:value="rawCredsJSON"
+              type="textarea"
+              :rows="6"
+              placeholder='{"api_key": "...", "api_secret": "..."}'
+              :status="credsJSONError ? 'error' : undefined"
+            />
+            <template v-if="credsJSONError" #feedback>{{ credsJSONError }}</template>
+          </NFormItem>
+        </NForm>
+      </template>
+
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="showCredentials = false">取消</NButton>
+          <NButton type="primary" :loading="savingCreds" @click="submitCredentials">儲存憑證</NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <!-- ── Sync result modal ─────────────────────────────────────────────── -->
+    <NModal
+      v-model:show="showSyncResult"
+      preset="card"
+      title="同步結果"
+      style="width: 560px"
+    >
+      <template v-if="syncResult">
+        <NGrid :cols="3" :x-gap="16" style="margin-bottom:20px">
+          <NGridItem>
+            <NStatistic label="供應商回傳" :value="syncResult.total" />
+          </NGridItem>
+          <NGridItem>
+            <NStatistic label="已更新" :value="syncResult.updated">
+              <template #prefix>
+                <NTag type="success" size="small" style="margin-right:4px">✓</NTag>
+              </template>
+            </NStatistic>
+          </NGridItem>
+          <NGridItem>
+            <NStatistic label="不在本系統" :value="syncResult.not_found?.length ?? 0">
+              <template #prefix>
+                <NTag
+                  :type="syncResult.not_found?.length ? 'warning' : 'default'"
+                  size="small"
+                  style="margin-right:4px"
+                >!</NTag>
+              </template>
+            </NStatistic>
+          </NGridItem>
+        </NGrid>
+
+        <!-- Not found list -->
+        <template v-if="syncResult.not_found?.length">
+          <NDivider style="margin:8px 0">
+            <NText depth="3" style="font-size:12px">以下域名存在於供應商帳號，但未在本系統登記</NText>
+          </NDivider>
+          <NList size="small" bordered style="max-height:160px;overflow-y:auto">
+            <NListItem v-for="fqdn in syncResult.not_found" :key="fqdn">
+              <NEllipsis>{{ fqdn }}</NEllipsis>
+            </NListItem>
+          </NList>
+          <NAlert type="info" style="margin-top:8px">
+            如需追蹤這些域名，請至「域名管理」手動新增並綁定此 Registrar 帳號。
+          </NAlert>
+        </template>
+
+        <!-- Errors -->
+        <template v-if="syncResult.errors?.length">
+          <NDivider style="margin:8px 0">
+            <NText type="error" style="font-size:12px">錯誤 ({{ syncResult.errors.length }})</NText>
+          </NDivider>
+          <NList size="small" bordered style="max-height:120px;overflow-y:auto">
+            <NListItem v-for="e in syncResult.errors" :key="e.fqdn">
+              <NText type="error">{{ e.fqdn }}</NText>
+              <NText depth="3" style="margin-left:8px;font-size:12px">{{ e.message }}</NText>
+            </NListItem>
+          </NList>
+        </template>
+      </template>
+
+      <template #footer>
+        <NSpace justify="end">
+          <NButton type="primary" @click="showSyncResult = false">確定</NButton>
+        </NSpace>
+      </template>
+    </NModal>
   </div>
 </template>
 
 <style scoped>
-.mb-4 { margin-bottom: 16px; }
-.mb-3 { margin-bottom: 12px; }
-.section-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 16px 0 8px;
-}
+.text-gray { color: var(--n-text-color-disabled); font-size: 13px; }
+.mb-3      { margin-bottom: 12px; }
+.mb-4      { margin-bottom: 16px; }
 </style>

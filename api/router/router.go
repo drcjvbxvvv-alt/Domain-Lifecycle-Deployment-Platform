@@ -205,6 +205,7 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			registrarAccounts.GET("/:id", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.RegistrarHandler.GetAccount)
 			registrarAccounts.PUT("/:id", middleware.RequireAnyRole("admin"), deps.RegistrarHandler.UpdateAccount)
 			registrarAccounts.DELETE("/:id", middleware.RequireAnyRole("admin"), deps.RegistrarHandler.DeleteAccount)
+			registrarAccounts.POST("/:id/sync", middleware.RequireAnyRole("admin"), deps.RegistrarHandler.SyncAccount)
 		}
 
 		// ── CDN Providers + Accounts (PE.1) ──────────────────────────

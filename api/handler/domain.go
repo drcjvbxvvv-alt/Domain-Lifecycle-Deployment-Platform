@@ -299,8 +299,11 @@ func (h *DomainHandler) Get(c *gin.Context) {
 // ── List ──────────────────────────────────────────────────────────────────────
 
 // List handles GET /api/v1/domains with optional filters.
-// Supported query params: project_id, registrar_id, dns_provider_id, tld,
-// expiry_status, lifecycle_state, cursor, limit.
+// Supported query params: project_id, registrar_id, dns_provider_id,
+// cdn_account_id, cdn_provider_id, tld, expiry_status, lifecycle_state,
+// purpose, tag_id, cursor, limit.
+// The response items include denormalised registrar_name, cdn_account_name,
+// and cdn_provider_type fields resolved via server-side JOINs.
 func (h *DomainHandler) List(c *gin.Context) {
 	in := lifecycle.ListInput{}
 
@@ -324,6 +327,11 @@ func (h *DomainHandler) List(c *gin.Context) {
 			in.CDNAccountID = &id
 		}
 	}
+	if v := c.Query("cdn_provider_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			in.CDNProviderID = &id
+		}
+	}
 	if v := c.Query("tld"); v != "" {
 		in.TLD = &v
 	}
@@ -332,6 +340,9 @@ func (h *DomainHandler) List(c *gin.Context) {
 	}
 	if v := c.Query("lifecycle_state"); v != "" {
 		in.LifecycleState = &v
+	}
+	if v := c.Query("purpose"); v != "" {
+		in.Purpose = &v
 	}
 	if v := c.Query("tag_id"); v != "" {
 		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
@@ -342,7 +353,7 @@ func (h *DomainHandler) List(c *gin.Context) {
 	in.Cursor, _ = strconv.ParseInt(c.DefaultQuery("cursor", "0"), 10, 64)
 	in.Limit, _ = strconv.Atoi(c.DefaultQuery("limit", "20"))
 
-	result, err := h.svc.List(c.Request.Context(), in)
+	result, err := h.svc.ListEnriched(c.Request.Context(), in)
 	if err != nil {
 		h.logger.Error("list domains", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -353,7 +364,7 @@ func (h *DomainHandler) List(c *gin.Context) {
 
 	items := make([]gin.H, 0, len(result.Items))
 	for i := range result.Items {
-		items = append(items, domainResponse(&result.Items[i]))
+		items = append(items, domainListItemResponse(&result.Items[i]))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -577,6 +588,17 @@ func (h *DomainHandler) CancelTransfer(c *gin.Context) {
 }
 
 // ── Response builder ──────────────────────────────────────────────────────────
+
+// domainListItemResponse builds the response map for a list-endpoint item.
+// It includes all standard domain fields plus three denormalised display names
+// that were resolved by the enriched JOIN query (PE.3).
+func domainListItemResponse(d *postgres.DomainListRow) gin.H {
+	m := domainResponse(&d.Domain)
+	m["registrar_name"]   = d.RegistrarName
+	m["cdn_account_name"] = d.CDNAccountName
+	m["cdn_provider_type"] = d.CDNProviderType
+	return m
+}
 
 func domainResponse(d *postgres.Domain) gin.H {
 	return gin.H{

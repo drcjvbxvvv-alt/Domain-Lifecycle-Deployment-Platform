@@ -393,6 +393,82 @@ func (h *RegistrarHandler) UpdateAccount(c *gin.Context) {
 	})
 }
 
+// SyncAccount handles POST /api/v1/registrar-accounts/:id/sync
+//
+// Fetches all domains from the registrar API for this account and updates
+// registration_date, expiry_date, and auto_renew in our domains table.
+// Domains that exist in the registrar but are not in our DB are reported in
+// "not_found" and are NOT automatically created.
+func (h *RegistrarHandler) SyncAccount(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code": 40000, "data": nil, "message": "invalid account id",
+		})
+		return
+	}
+
+	result, err := h.svc.SyncAccount(c.Request.Context(), id)
+	if errors.Is(err, registrar.ErrAccountNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code": 40400, "data": nil, "message": "registrar account not found",
+		})
+		return
+	}
+	if errors.Is(err, registrar.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code": 40400, "data": nil, "message": "registrar not found",
+		})
+		return
+	}
+	if errors.Is(err, registrar.ErrNoAPIType) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"code": 42200, "data": nil,
+			"message": "registrar has no api_type configured — set api_type (e.g. \"godaddy\") on the registrar first",
+		})
+		return
+	}
+	if errors.Is(err, registrar.ErrCredentialsRejected) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"code": 42201, "data": nil,
+			"message": "registrar API credentials rejected — verify your Key and Secret at developer.godaddy.com/keys, then update them via 設定憑證",
+		})
+		return
+	}
+	if errors.Is(err, registrar.ErrCredentialsMissing) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"code": 42202, "data": nil,
+			"message": "registrar account credentials are empty or invalid — set them via 設定憑證",
+		})
+		return
+	}
+	if errors.Is(err, registrar.ErrProviderNotSupported) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"code": 42203, "data": nil,
+			"message": err.Error(),
+		})
+		return
+	}
+	if errors.Is(err, registrar.ErrRateLimitExceeded) {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"code": 42900, "data": nil,
+			"message": "registrar API rate limit exceeded — wait a moment before retrying",
+		})
+		return
+	}
+	if err != nil {
+		h.logger.Error("sync registrar account", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code": 50000, "data": nil, "message": "sync failed: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0, "message": "ok", "data": result,
+	})
+}
+
 // DeleteAccount handles DELETE /api/v1/registrar-accounts/:id
 func (h *RegistrarHandler) DeleteAccount(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

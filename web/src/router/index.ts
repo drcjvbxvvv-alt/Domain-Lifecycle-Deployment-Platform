@@ -148,13 +148,13 @@ const router = createRouter({
           path: 'registrars',
           name: 'RegistrarList',
           component: () => import('@/views/registrars/RegistrarList.vue'),
-          meta: { title: 'Registrar 管理', minRole: 'viewer' },
+          meta: { title: '域名註冊商管理', minRole: 'viewer' },
         },
         {
           path: 'registrars/:id',
           name: 'RegistrarDetail',
           component: () => import('@/views/registrars/RegistrarDetail.vue'),
-          meta: { title: 'Registrar 詳情', minRole: 'viewer' },
+          meta: { title: '域名註冊商詳情', minRole: 'viewer' },
         },
 
         // ── DNS Providers ─────────────────────────────────────

@@ -190,9 +190,9 @@ Phase B                                         Phase C  │
 | **PD.6** | GFW 儀表板 + 恢復監控 | 🔲 未開始 | — | 依賴 PD.4 |
 | **PE.1** | CDN 帳號管理 | ✅ 完成 | 2026-04-26 | cdn_providers + cdn_accounts + Vue CRUD |
 | **PE.2** | 域名資產欄位補全 | ✅ 完成 | 2026-04-26 | cdn_account_id + origin_ips + UI |
-| **PE.3** | 域名列表 UI 強化 | 🔲 未開始 | — | 顯示 CDN/解析帳號 |
+| **PE.3** | 域名列表 UI 強化 | ✅ 完成 | 2026-04-26 | DomainListRow JOIN + CDN/Registrar/Purpose 欄位 + 篩選 + CSV |
 
-**整體進度**：27 / 31 任務完成（87.1%）
+**整體進度**：28 / 31 任務完成（90.3%）
 
 ---
 
@@ -656,7 +656,7 @@ type DomainResponse struct {
 
 ---
 
-### 10.3 PE.3 — 域名列表 UI 強化（未開始）
+### 10.3 PE.3 — 域名列表 UI 強化 ✅ (完成 2026-04-26)
 
 **目標**：域名列表直接顯示 CDN 帳號、解析帳號、源站 IP，讓運維一眼看清每個域名的完整指向。
 
@@ -942,8 +942,8 @@ docs: update MASTER_ROADMAP with Phase E CDN account spec
 |------|------|--------|------|
 | `internal/artifact/builder_test.go` 編譯失敗 | `*mockStorage` 缺少 `GetObjectContent` 方法 | 中 | 預存在問題，需修復 `mockStorage` 介面 |
 | `cmd/scanner/` 目錄存在 | 歷史殘留 | 低 | 等 Phase D 完成後清理 |
-| DNS Provider UI 只顯示 ID | `DomainList.vue` | 低 | PE.3 一併改成顯示名稱 |
-| Registrar 帳號列表在域名列表不可見 | `DomainList.vue` | 中 | PE.3 補充 |
+| DNS Provider UI 只顯示 ID | `DomainList.vue` | 低 | ✅ PE.3 已修 — 現在顯示 Registrar 名稱、CDN 供應商類型 + 帳號名稱 |
+| Registrar 帳號列表在域名列表不可見 | `DomainList.vue` | 中 | ✅ PE.3 已修 — 新增 Registrar 欄顯示 registrar_name |
 
 ### 15.2 Phase E 後的架構改進建議
 

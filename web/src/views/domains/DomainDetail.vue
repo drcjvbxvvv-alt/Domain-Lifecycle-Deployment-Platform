@@ -1106,7 +1106,7 @@ onMounted(async () => {
                   </NDescriptionsItem>
                 </NDescriptions>
 
-                <div v-if="!gfwTimeline || !gfwTimeline.verdicts.length" class="empty-hint">
+                <div v-if="!gfwTimeline || !gfwTimeline.verdicts?.length" class="empty-hint">
                   暫無 GFW 偵測記錄
                 </div>
 
@@ -1115,7 +1115,7 @@ onMounted(async () => {
                   <div class="section-title" style="margin-bottom:8px">偵測歷史（最近 50 筆）</div>
                   <NDataTable
                     :columns="gfwColumns"
-                    :data="gfwTimeline.verdicts"
+                    :data="gfwTimeline.verdicts ?? []"
                     :bordered="false"
                     size="small"
                     :max-height="360"

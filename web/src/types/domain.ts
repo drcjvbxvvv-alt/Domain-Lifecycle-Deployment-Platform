@@ -18,6 +18,11 @@ export interface DomainResponse {
   cdn_account_id:       number | null
   origin_ips:           string[]
 
+  // Denormalised display names — present on list-endpoint items (PE.3)
+  registrar_name?:    string | null
+  cdn_account_name?:  string | null
+  cdn_provider_type?: string | null
+
   // Registration & expiry
   registration_date: string | null  // ISO date
   expiry_date:        string | null

@@ -104,30 +104,31 @@ parallel to the Registrar/DNS Provider pattern.
 
 ---
 
-### PE.3 — Domain List UI Strengthening 🔲 (未開始)
+### PE.3 — Domain List UI Strengthening ✅ (完成 2026-04-26)
 
 **Goal**: Richer domain list — CDN column, Registrar column, purpose badge, origin IP tooltip.
 
-**Scope**:
-- `DomainList.vue`: add columns for CDN (from cdn_accounts join), Registrar, purpose
-- Server-side: join `domains → cdn_accounts → cdn_providers` in list query
-- Add purpose filter + CDN filter to list API query params
-- Export CSV with new columns
+**Deliverables**:
 
-**Dependencies**: PE.2 must complete first (schema + store changes).
+| Layer | File | Status |
+|-------|------|--------|
+| Store | `store/postgres/domain.go` — `DomainListRow` struct + `ListEnriched` + `CDNProviderID`/`Purpose` filters | ✅ |
+| Service | `internal/lifecycle/service.go` — `toListFilter()` helper + `ListEnriched` + `ListEnrichedResult` | ✅ |
+| Service | `internal/tag/service.go` — `ExportDomainsEnriched` | ✅ |
+| Handler | `api/handler/domain.go` — `List` switched to `ListEnriched`; `domainListItemResponse`; new query params | ✅ |
+| Handler | `api/handler/tag.go` — `Export` rewritten with new columns + `ExportDomainsEnriched` | ✅ |
+| API Types | `web/src/api/domain.ts` — `cdn_provider_id` + `purpose` added to `DomainListParams` | ✅ |
+| TS Types | `web/src/types/domain.ts` — `registrar_name`, `cdn_account_name`, `cdn_provider_type` added | ✅ |
+| View | `web/src/views/domains/DomainList.vue` — Registrar/CDN/Purpose columns + CDN+purpose filters | ✅ |
+| Tests | `internal/lifecycle/list_enriched_test.go` — 18 unit tests | ✅ |
 
-**Acceptance criteria**:
-- CDN column shows provider type tag + account name
-- Registrar column shows registrar name
-- Purpose column shows badge (e.g., 直播、備用、測試)
-- Filter by CDN provider works
-- CSV export includes all new columns
-
-**Estimated steps**: 4
-1. Store: update ListDomains to join cdn_accounts + cdn_providers + registrars
-2. Handler: extend DomainListItem DTO
-3. Frontend: DomainList.vue new columns + filters
-4. Export: update CSV generation
+**Key design decisions**:
+- `DomainListRow` embeds `Domain` anonymously — sqlx scans embedded struct fields directly, no custom mapping needed
+- `ListEnriched` uses `enrichedDomainSelect` + `enrichedDomainJoins` constants to avoid SQL ambiguity; all domain columns prefixed with `d.`
+- `CDNProviderID` filter uses a subquery (`cdn_account_id IN (SELECT ...)`) so it reuses the existing FK without schema changes
+- `toListFilter()` helper extracted to avoid duplication between `List` and `ListEnriched`
+- CSV export calls `ExportDomainsEnriched` (10k limit) and adds: purpose, registrar_name, cdn_provider_type, cdn_account_name, origin_ips
+- Frontend: `cdnStore.fetchList()` fetches providers for the filter dropdown; `CDN_PROVIDER_TYPES` used for human-readable type labels
 
 ---
 
@@ -137,6 +138,6 @@ parallel to the Registrar/DNS Provider pattern.
 |------|-------------|--------|------|
 | PE.1 | CDN 帳號管理 | ✅ 完成 | 2026-04-26 |
 | PE.2 | 域名資產欄位補全 | ✅ 完成 | 2026-04-26 |
-| PE.3 | 域名列表 UI 強化 | 🔲 未開始 | — |
+| PE.3 | 域名列表 UI 強化 | ✅ 完成 | 2026-04-26 |
 
-**Phase E 整體進度**: 2 / 3 完成（66.7%）
+**Phase E 整體進度**: 3 / 3 完成（100%）

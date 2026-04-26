@@ -1,46 +1,56 @@
--- 000001_init.down.sql — reverse order of 000001_init.up.sql
-DROP TABLE IF EXISTS audit_logs            CASCADE;
-DROP TABLE IF EXISTS approval_requests     CASCADE;
-DROP TABLE IF EXISTS agent_logs            CASCADE;
-DROP TABLE IF EXISTS agent_upgrade_jobs    CASCADE;
-DROP TABLE IF EXISTS agent_versions        CASCADE;
-DROP TABLE IF EXISTS notification_rules    CASCADE;
-DROP TABLE IF EXISTS alert_events          CASCADE;
-DROP TABLE IF EXISTS probe_tasks           CASCADE;
-DROP TABLE IF EXISTS probe_policies        CASCADE;
-DROP TABLE IF EXISTS rollback_records      CASCADE;
-DROP TABLE IF EXISTS deployment_logs       CASCADE;
-DROP TABLE IF EXISTS agent_tasks           CASCADE;
-DROP TABLE IF EXISTS domain_tasks          CASCADE;
-DROP TABLE IF EXISTS release_shards        CASCADE;
-DROP TABLE IF EXISTS release_scopes        CASCADE;
-DROP TABLE IF EXISTS release_state_history CASCADE;
-DROP TABLE IF EXISTS releases              CASCADE;
-DROP TABLE IF EXISTS agent_heartbeats      CASCADE;
-DROP TABLE IF EXISTS agent_state_history   CASCADE;
-DROP TABLE IF EXISTS agents                CASCADE;
-DROP TABLE IF EXISTS host_groups           CASCADE;
-DROP TABLE IF EXISTS artifacts             CASCADE;
-DROP TABLE IF EXISTS template_versions     CASCADE;
-DROP TABLE IF EXISTS templates             CASCADE;
-DROP TABLE IF EXISTS dns_record_templates    CASCADE;
-DROP TABLE IF EXISTS domain_permissions      CASCADE;
-DROP TABLE IF EXISTS domain_import_jobs     CASCADE;
-DROP TABLE IF EXISTS domain_tags            CASCADE;
-DROP TABLE IF EXISTS tags                   CASCADE;
-DROP TABLE IF EXISTS domain_costs           CASCADE;
-DROP TABLE IF EXISTS domain_fee_schedules   CASCADE;
-DROP TABLE IF EXISTS ssl_certificates       CASCADE;
-DROP TABLE IF EXISTS domain_lifecycle_history CASCADE;
-DROP TABLE IF EXISTS domain_variables      CASCADE;
-DROP TABLE IF EXISTS domains               CASCADE;
-DROP TABLE IF EXISTS dns_providers          CASCADE;
-DROP TABLE IF EXISTS cdn_accounts          CASCADE;
-DROP TABLE IF EXISTS cdn_providers         CASCADE;
-DROP TABLE IF EXISTS registrar_accounts    CASCADE;
-DROP TABLE IF EXISTS registrars            CASCADE;
-DROP TABLE IF EXISTS projects              CASCADE;
-DROP TABLE IF EXISTS user_roles            CASCADE;
-DROP TABLE IF EXISTS roles                 CASCADE;
-DROP TABLE IF EXISTS users                 CASCADE;
+-- 000001_init.down.sql — reverse order of merged 000001_init.up.sql
+-- Includes: original 000001 tables + 000002 TimescaleDB + 000003 admin seed
+
+-- Remove admin seed data (000003 — before CASCADE drops anyway)
+DELETE FROM user_roles WHERE user_id = (SELECT id FROM users WHERE username = 'admin');
+DELETE FROM users WHERE username = 'admin';
+
+-- Drop time-series table (000002)
+DROP TABLE IF EXISTS probe_results             CASCADE;
+
+-- Drop all business tables in reverse dependency order (000001)
+DROP TABLE IF EXISTS audit_logs                CASCADE;
+DROP TABLE IF EXISTS approval_requests         CASCADE;
+DROP TABLE IF EXISTS agent_logs                CASCADE;
+DROP TABLE IF EXISTS agent_upgrade_jobs        CASCADE;
+DROP TABLE IF EXISTS agent_versions            CASCADE;
+DROP TABLE IF EXISTS notification_rules        CASCADE;
+DROP TABLE IF EXISTS alert_events              CASCADE;
+DROP TABLE IF EXISTS probe_tasks               CASCADE;
+DROP TABLE IF EXISTS probe_policies            CASCADE;
+DROP TABLE IF EXISTS rollback_records          CASCADE;
+DROP TABLE IF EXISTS deployment_logs           CASCADE;
+DROP TABLE IF EXISTS agent_tasks               CASCADE;
+DROP TABLE IF EXISTS domain_tasks              CASCADE;
+DROP TABLE IF EXISTS release_shards            CASCADE;
+DROP TABLE IF EXISTS release_scopes            CASCADE;
+DROP TABLE IF EXISTS release_state_history     CASCADE;
+DROP TABLE IF EXISTS releases                  CASCADE;
+DROP TABLE IF EXISTS agent_heartbeats          CASCADE;
+DROP TABLE IF EXISTS agent_state_history       CASCADE;
+DROP TABLE IF EXISTS agents                    CASCADE;
+DROP TABLE IF EXISTS host_groups               CASCADE;
+DROP TABLE IF EXISTS artifacts                 CASCADE;
+DROP TABLE IF EXISTS template_versions         CASCADE;
+DROP TABLE IF EXISTS templates                 CASCADE;
+DROP TABLE IF EXISTS dns_record_templates      CASCADE;
+DROP TABLE IF EXISTS domain_permissions        CASCADE;
+DROP TABLE IF EXISTS domain_import_jobs        CASCADE;
+DROP TABLE IF EXISTS domain_tags               CASCADE;
+DROP TABLE IF EXISTS tags                      CASCADE;
+DROP TABLE IF EXISTS domain_costs              CASCADE;
+DROP TABLE IF EXISTS domain_fee_schedules      CASCADE;
+DROP TABLE IF EXISTS ssl_certificates          CASCADE;
+DROP TABLE IF EXISTS domain_lifecycle_history  CASCADE;
+DROP TABLE IF EXISTS domain_variables          CASCADE;
+DROP TABLE IF EXISTS domains                   CASCADE;
+DROP TABLE IF EXISTS dns_providers             CASCADE;
+DROP TABLE IF EXISTS cdn_accounts              CASCADE;
+DROP TABLE IF EXISTS cdn_providers             CASCADE;
+DROP TABLE IF EXISTS registrar_accounts        CASCADE;
+DROP TABLE IF EXISTS registrars                CASCADE;
+DROP TABLE IF EXISTS projects                  CASCADE;
+DROP TABLE IF EXISTS user_roles                CASCADE;
+DROP TABLE IF EXISTS roles                     CASCADE;
+DROP TABLE IF EXISTS users                     CASCADE;
 DROP EXTENSION IF EXISTS "pgcrypto";

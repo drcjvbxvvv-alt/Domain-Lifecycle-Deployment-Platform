@@ -265,9 +265,10 @@ func (h *TagHandler) BulkAction(c *gin.Context) {
 
 // ── CSV Export ─────────────────────────────────────────────────────────────────
 
-// Export handles POST /api/v1/domains/export — streams CSV of domain data.
+// Export handles GET /api/v1/domains/export — streams CSV of domain data.
+// Supported query params: project_id, tag_id, lifecycle_state, purpose,
+// cdn_provider_id. The CSV includes enriched registrar and CDN display names.
 func (h *TagHandler) Export(c *gin.Context) {
-	// Reuse the same filters as the list endpoint via query params
 	ctx := c.Request.Context()
 	f := postgres.ListFilter{Limit: 10000}
 	if v := c.Query("project_id"); v != "" {
@@ -283,8 +284,16 @@ func (h *TagHandler) Export(c *gin.Context) {
 	if v := c.Query("lifecycle_state"); v != "" {
 		f.LifecycleState = &v
 	}
+	if v := c.Query("purpose"); v != "" {
+		f.Purpose = &v
+	}
+	if v := c.Query("cdn_provider_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			f.CDNProviderID = &id
+		}
+	}
 
-	domains, err := h.svc.ExportDomains(ctx, f)
+	domains, err := h.svc.ExportDomainsEnriched(ctx, f)
 	if err != nil {
 		h.logger.Error("export domains", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 50001, "data": nil, "message": "export failed"})
@@ -295,11 +304,13 @@ func (h *TagHandler) Export(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename=domains.csv")
 
 	w := csv.NewWriter(c.Writer)
-	// Header
 	_ = w.Write([]string{
 		"id", "fqdn", "tld", "lifecycle_state", "project_id",
+		"purpose",
+		"registrar_name", "cdn_provider_type", "cdn_account_name",
+		"origin_ips",
 		"expiry_date", "auto_renew", "annual_cost", "currency",
-		"registrar_account_id", "dns_provider_id", "tags",
+		"tags",
 	})
 	for _, d := range domains {
 		tags, _ := h.svc.GetDomainTags(ctx, d.ID)
@@ -319,18 +330,27 @@ func (h *TagHandler) Export(c *gin.Context) {
 		if d.Currency != nil {
 			currency = *d.Currency
 		}
-		regAccID := ""
-		if d.RegistrarAccountID != nil {
-			regAccID = strconv.FormatInt(*d.RegistrarAccountID, 10)
-		}
-		dnsID := ""
-		if d.DNSProviderID != nil {
-			dnsID = strconv.FormatInt(*d.DNSProviderID, 10)
-		}
 		tld := ""
 		if d.TLD != nil {
 			tld = *d.TLD
 		}
+		purpose := ""
+		if d.Purpose != nil {
+			purpose = *d.Purpose
+		}
+		registrarName := ""
+		if d.RegistrarName != nil {
+			registrarName = *d.RegistrarName
+		}
+		cdnProviderType := ""
+		if d.CDNProviderType != nil {
+			cdnProviderType = *d.CDNProviderType
+		}
+		cdnAccountName := ""
+		if d.CDNAccountName != nil {
+			cdnAccountName = *d.CDNAccountName
+		}
+		originIPs := joinCSVTags([]string(d.OriginIPs)) // reuse semicolon joiner
 
 		_ = w.Write([]string{
 			strconv.FormatInt(d.ID, 10),
@@ -338,12 +358,15 @@ func (h *TagHandler) Export(c *gin.Context) {
 			tld,
 			d.LifecycleState,
 			strconv.FormatInt(d.ProjectID, 10),
+			purpose,
+			registrarName,
+			cdnProviderType,
+			cdnAccountName,
+			originIPs,
 			expiryDate,
 			strconv.FormatBool(d.AutoRenew),
 			annualCost,
 			currency,
-			regAccID,
-			dnsID,
 			joinCSVTags(tagNames),
 		})
 	}

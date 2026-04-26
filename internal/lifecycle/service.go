@@ -197,9 +197,11 @@ type ListInput struct {
 	RegistrarID    *int64
 	DNSProviderID  *int64
 	CDNAccountID   *int64
+	CDNProviderID  *int64
 	TLD            *string
 	ExpiryStatus   *string
 	LifecycleState *string
+	Purpose        *string
 	TagID          *int64
 	Cursor         int64
 	Limit          int
@@ -211,19 +213,26 @@ type ListResult struct {
 	Cursor int64             `json:"cursor"`
 }
 
-func (s *Service) List(ctx context.Context, in ListInput) (*ListResult, error) {
-	f := postgres.ListFilter{
+// toListFilter converts a ListInput to the store-layer ListFilter.
+func toListFilter(in ListInput) postgres.ListFilter {
+	return postgres.ListFilter{
 		ProjectID:      in.ProjectID,
 		RegistrarID:    in.RegistrarID,
 		DNSProviderID:  in.DNSProviderID,
 		CDNAccountID:   in.CDNAccountID,
+		CDNProviderID:  in.CDNProviderID,
 		TLD:            in.TLD,
 		ExpiryStatus:   in.ExpiryStatus,
 		LifecycleState: in.LifecycleState,
+		Purpose:        in.Purpose,
 		TagID:          in.TagID,
 		Cursor:         in.Cursor,
 		Limit:          in.Limit,
 	}
+}
+
+func (s *Service) List(ctx context.Context, in ListInput) (*ListResult, error) {
+	f := toListFilter(in)
 
 	items, err := s.domains.ListWithFilter(ctx, f)
 	if err != nil {
@@ -238,6 +247,34 @@ func (s *Service) List(ctx context.Context, in ListInput) (*ListResult, error) {
 		nextCursor = items[len(items)-1].ID
 	}
 	return &ListResult{Items: items, Total: total, Cursor: nextCursor}, nil
+}
+
+// ListEnrichedResult mirrors ListResult but carries DomainListRow items that
+// include denormalised registrar and CDN display names.
+type ListEnrichedResult struct {
+	Items  []postgres.DomainListRow `json:"items"`
+	Total  int64                    `json:"total"`
+	Cursor int64                    `json:"cursor"`
+}
+
+// ListEnriched returns domains with registrar_name, cdn_account_name, and
+// cdn_provider_type resolved via LEFT JOINs in a single query.
+func (s *Service) ListEnriched(ctx context.Context, in ListInput) (*ListEnrichedResult, error) {
+	f := toListFilter(in)
+
+	items, err := s.domains.ListEnriched(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	total, err := s.domains.CountWithFilter(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	var nextCursor int64
+	if len(items) > 0 {
+		nextCursor = items[len(items)-1].ID
+	}
+	return &ListEnrichedResult{Items: items, Total: total, Cursor: nextCursor}, nil
 }
 
 // ── Update asset fields ───────────────────────────────────────────────────────

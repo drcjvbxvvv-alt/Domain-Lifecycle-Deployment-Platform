@@ -8,6 +8,7 @@ import type {
   UpdateRegistrarRequest,
   CreateRegistrarAccountRequest,
   UpdateRegistrarAccountRequest,
+  SyncResult,
 } from '@/types/registrar'
 import type { ApiResponse } from '@/types/common'
 
@@ -88,6 +89,11 @@ export const useRegistrarStore = defineStore('registrar', () => {
     await fetchAccounts(registrarId)
   }
 
+  async function syncAccount(id: number): Promise<SyncResult> {
+    const res = await registrarApi.syncAccount(id) as unknown as ApiResponse<SyncResult>
+    return res.data!
+  }
+
   return {
     registrars,
     total,
@@ -103,5 +109,6 @@ export const useRegistrarStore = defineStore('registrar', () => {
     createAccount,
     updateAccount,
     removeAccount,
+    syncAccount,
   }
 })
