@@ -70,34 +70,38 @@ func TestRegistry_GetCloudflare_Valid(t *testing.T) {
 // interface against a mock httptest.Server. This ensures the Cloudflare
 // implementation satisfies all interface contracts end-to-end.
 func TestProviderContract_Cloudflare(t *testing.T) {
+	// Use a proper 32-char hex zone ID so resolveZone passes through without
+	// making a zone-name lookup request.
+	const zoneID = "feedfeedfeedfeedfeedfeedfeedfeed"
+
 	mux := http.NewServeMux()
 
 	// ListRecords
-	mux.HandleFunc("GET /zones/z1/dns_records", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /zones/"+zoneID+"/dns_records", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"errors":null,"result":[{"id":"r1","type":"A","name":"example.com","content":"1.2.3.4","ttl":300,"proxied":false}]}`))
 	})
 
 	// CreateRecord
-	mux.HandleFunc("POST /zones/z1/dns_records", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /zones/"+zoneID+"/dns_records", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"errors":null,"result":{"id":"new","type":"A","name":"x.example.com","content":"9.9.9.9","ttl":300,"proxied":false}}`))
 	})
 
 	// UpdateRecord
-	mux.HandleFunc("PUT /zones/z1/dns_records/r1", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("PUT /zones/"+zoneID+"/dns_records/r1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"errors":null,"result":{"id":"r1","type":"A","name":"example.com","content":"5.5.5.5","ttl":300,"proxied":false}}`))
 	})
 
 	// DeleteRecord
-	mux.HandleFunc("DELETE /zones/z1/dns_records/r1", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("DELETE /zones/"+zoneID+"/dns_records/r1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"errors":null,"result":{"id":"r1"}}`))
 	})
 
 	// GetNameservers
-	mux.HandleFunc("GET /zones/z1", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /zones/"+zoneID, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"errors":null,"result":{"name_servers":["ns1.cloudflare.com","ns2.cloudflare.com"]}}`))
 	})
@@ -105,42 +109,41 @@ func TestProviderContract_Cloudflare(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	p := newCloudflareProviderWithClient("z1", "tok", srv.URL, srv.Client())
+	p := newCloudflareProviderWithClient(zoneID, "tok", srv.URL, srv.Client())
 	ctx := context.Background()
 
 	t.Run("ListRecords", func(t *testing.T) {
-		records, err := p.ListRecords(ctx, "z1", RecordFilter{})
+		records, err := p.ListRecords(ctx, zoneID, RecordFilter{})
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 		assert.Equal(t, "r1", records[0].ID)
 	})
 
 	t.Run("CreateRecord", func(t *testing.T) {
-		rec, err := p.CreateRecord(ctx, "z1", Record{Type: "A", Name: "x.example.com", Content: "9.9.9.9", TTL: 300})
+		rec, err := p.CreateRecord(ctx, zoneID, Record{Type: "A", Name: "x.example.com", Content: "9.9.9.9", TTL: 300})
 		require.NoError(t, err)
 		assert.Equal(t, "new", rec.ID)
 	})
 
 	t.Run("UpdateRecord", func(t *testing.T) {
-		rec, err := p.UpdateRecord(ctx, "z1", "r1", Record{Type: "A", Name: "example.com", Content: "5.5.5.5", TTL: 300})
+		rec, err := p.UpdateRecord(ctx, zoneID, "r1", Record{Type: "A", Name: "example.com", Content: "5.5.5.5", TTL: 300})
 		require.NoError(t, err)
 		assert.Equal(t, "5.5.5.5", rec.Content)
 	})
 
 	t.Run("DeleteRecord", func(t *testing.T) {
-		err := p.DeleteRecord(ctx, "z1", "r1")
+		err := p.DeleteRecord(ctx, zoneID, "r1")
 		require.NoError(t, err)
 	})
 
 	t.Run("GetNameservers", func(t *testing.T) {
-		ns, err := p.GetNameservers(ctx, "z1")
+		ns, err := p.GetNameservers(ctx, zoneID)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"ns1.cloudflare.com", "ns2.cloudflare.com"}, ns)
 	})
 
 	t.Run("BatchCreateRecords", func(t *testing.T) {
-		// reuse the POST handler — creates two records
-		out, err := p.BatchCreateRecords(ctx, "z1", []Record{
+		out, err := p.BatchCreateRecords(ctx, zoneID, []Record{
 			{Type: "A", Name: "x.example.com", Content: "9.9.9.9", TTL: 300},
 		})
 		require.NoError(t, err)
@@ -148,8 +151,7 @@ func TestProviderContract_Cloudflare(t *testing.T) {
 	})
 
 	t.Run("BatchDeleteRecords", func(t *testing.T) {
-		// reuse the DELETE handler
-		err := p.BatchDeleteRecords(ctx, "z1", []string{"r1"})
+		err := p.BatchDeleteRecords(ctx, zoneID, []string{"r1"})
 		require.NoError(t, err)
 	})
 }

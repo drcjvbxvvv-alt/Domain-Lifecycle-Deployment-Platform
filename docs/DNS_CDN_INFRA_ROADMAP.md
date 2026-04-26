@@ -108,7 +108,7 @@ web/src/views/
 ```
 Phase A（DNS Provider 能力建設）
 ├── A.1  DNS Provider 介面擴充（Record CRUD 方法）  ✅ (完成)
-├── A.2  Cloudflare DNS Record CRUD        [depends: A.1]
+├── A.2  Cloudflare DNS Record CRUD        [depends: A.1]  ✅ (完成)
 ├── A.3  阿里雲 DNS (ALIDNS) Record CRUD   [depends: A.1]
 ├── A.4  騰訊雲 DNSPod Record CRUD         [depends: A.1]
 ├── A.5  華為雲 DNS Record CRUD            [depends: A.1]
@@ -235,7 +235,7 @@ type RecordFilter struct {
 
 ---
 
-### A.2 Cloudflare DNS Record CRUD
+### A.2 Cloudflare DNS Record CRUD ✅ (完成)
 
 **API**: Cloudflare API v4 — `GET/POST/PUT/DELETE /zones/{zone_id}/dns_records`
 
