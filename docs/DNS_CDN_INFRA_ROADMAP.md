@@ -109,7 +109,7 @@ web/src/views/
 Phase A（DNS Provider 能力建設）
 ├── A.1  DNS Provider 介面擴充（Record CRUD 方法）  ✅ (完成)
 ├── A.2  Cloudflare DNS Record CRUD        [depends: A.1]  ✅ (完成)
-├── A.3  阿里雲 DNS (ALIDNS) Record CRUD   [depends: A.1]
+├── A.3  阿里雲 DNS (ALIDNS) Record CRUD   [depends: A.1]  ✅ (完成)
 ├── A.4  騰訊雲 DNSPod Record CRUD         [depends: A.1]
 ├── A.5  華為雲 DNS Record CRUD            [depends: A.1]
 └── A.6  DNS 記錄管理 UI                   [depends: A.1 + 至少一個 A.2-5]
@@ -294,7 +294,7 @@ TestCloudflare_ZoneNotFound            // 404 → ErrZoneNotFound (新 sentinel)
 
 ---
 
-### A.3 阿里雲 DNS (ALIDNS) Record CRUD
+### A.3 阿里雲 DNS (ALIDNS) Record CRUD ✅ (完成)
 
 **API**: `https://alidns.aliyuncs.com` — 與阿里雲 registrar API 相同的 HMAC-SHA1 簽名機制，可共用 `aliyunEncode` / `aliyunSign` helper。
 

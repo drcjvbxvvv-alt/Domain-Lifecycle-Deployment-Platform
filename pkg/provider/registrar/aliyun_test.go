@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"domain-platform/pkg/provider/aliyunauth"
 )
 
 // ── test helpers ───────────────────────────────────────────────────────────────
@@ -97,15 +99,15 @@ func TestNewAliyunProvider_InvalidJSON(t *testing.T) {
 func TestAliyunEncode_UnreservedPassthrough(t *testing.T) {
 	// RFC3986 unreserved chars must not be encoded
 	input := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
-	assert.Equal(t, input, aliyunEncode(input))
+	assert.Equal(t, input, aliyunauth.Encode(input))
 }
 
 func TestAliyunEncode_SpecialChars(t *testing.T) {
-	assert.Equal(t, "%2F", aliyunEncode("/"))
-	assert.Equal(t, "%3D", aliyunEncode("="))
-	assert.Equal(t, "%26", aliyunEncode("&"))
-	assert.Equal(t, "%2B", aliyunEncode("+"))
-	assert.Equal(t, "%20", aliyunEncode(" "))
+	assert.Equal(t, "%2F", aliyunauth.Encode("/"))
+	assert.Equal(t, "%3D", aliyunauth.Encode("="))
+	assert.Equal(t, "%26", aliyunauth.Encode("&"))
+	assert.Equal(t, "%2B", aliyunauth.Encode("+"))
+	assert.Equal(t, "%20", aliyunauth.Encode(" "))
 }
 
 // ── ListDomains — happy path ───────────────────────────────────────────────────

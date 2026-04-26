@@ -2,18 +2,14 @@ package registrar
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"domain-platform/pkg/provider/aliyunauth"
 )
 
 func init() {
@@ -36,7 +32,7 @@ type AliyunCredentials struct {
 // ── Provider ───────────────────────────────────────────────────────────────────
 
 type aliyunProvider struct {
-	creds   AliyunCredentials
+	signer  *aliyunauth.Signer
 	baseURL string
 	client  *http.Client
 }
@@ -58,7 +54,7 @@ func newAliyunProvider(credentials json.RawMessage) (Provider, error) {
 	}
 
 	return &aliyunProvider{
-		creds:   creds,
+		signer:  aliyunauth.New(creds.AccessKeyID, creds.AccessKeySecret),
 		baseURL: aliyunDefaultBaseURL,
 		client:  &http.Client{Timeout: 30 * time.Second},
 	}, nil
@@ -67,7 +63,11 @@ func newAliyunProvider(credentials json.RawMessage) (Provider, error) {
 // newAliyunProviderWithClient allows injecting a custom HTTP client and base URL
 // for testing.
 func newAliyunProviderWithClient(creds AliyunCredentials, baseURL string, client *http.Client) Provider {
-	return &aliyunProvider{creds: creds, baseURL: baseURL, client: client}
+	return &aliyunProvider{
+		signer:  aliyunauth.New(creds.AccessKeyID, creds.AccessKeySecret),
+		baseURL: baseURL,
+		client:  client,
+	}
 }
 
 func (p *aliyunProvider) Name() string { return "aliyun" }
@@ -182,14 +182,13 @@ func (p *aliyunProvider) GetDomain(ctx context.Context, fqdn string) (*DomainInf
 // doRequest builds, signs, and executes a GET request to the Aliyun Domain API.
 // It maps Aliyun error codes to typed sentinel errors.
 func (p *aliyunProvider) doRequest(ctx context.Context, params map[string]string) ([]byte, error) {
-	// Merge common params
-	full := p.commonParams()
+	// Merge common params with action-specific params.
+	full := p.signer.CommonParams(aliyunAPIVersion)
 	for k, v := range params {
 		full[k] = v
 	}
 
-	// Sign and build URL
-	rawURL := p.signedURL(full)
+	rawURL := p.signer.SignedURL(p.baseURL, full)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -209,65 +208,6 @@ func (p *aliyunProvider) doRequest(ctx context.Context, params map[string]string
 	}
 
 	return body, nil
-}
-
-// commonParams returns the standard Aliyun RPC parameters (without Action-specific ones).
-func (p *aliyunProvider) commonParams() map[string]string {
-	return map[string]string{
-		"Format":           "JSON",
-		"Version":          aliyunAPIVersion,
-		"AccessKeyId":      p.creds.AccessKeyID,
-		"SignatureMethod":  "HMAC-SHA1",
-		"SignatureVersion": "1.0",
-		"SignatureNonce":   uuid.New().String(),
-		"Timestamp":        time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-	}
-}
-
-// signedURL builds a signed GET URL from the parameter map.
-func (p *aliyunProvider) signedURL(params map[string]string) string {
-	// Step 1: sort keys
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	// Step 2: encode each key=value pair
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, aliyunEncode(k)+"="+aliyunEncode(params[k]))
-	}
-
-	// Step 3: join with &
-	canonicalQS := strings.Join(parts, "&")
-
-	// Step 4: build string-to-sign
-	stringToSign := "GET&%2F&" + aliyunEncode(canonicalQS)
-
-	// Step 5: HMAC-SHA1 with key = accessKeySecret + "&"
-	signingKey := p.creds.AccessKeySecret + "&"
-	mac := hmac.New(sha1.New, []byte(signingKey))
-	mac.Write([]byte(stringToSign))
-	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-
-	// Step 6: append Signature and build final URL
-	return p.baseURL + "/?" + canonicalQS + "&Signature=" + aliyunEncode(sig)
-}
-
-// aliyunEncode percent-encodes a string per RFC3986, leaving unreserved chars
-// (A-Z a-z 0-9 - _ . ~) unencoded. This is required by Aliyun's signing spec.
-func aliyunEncode(s string) string {
-	var buf strings.Builder
-	for _, b := range []byte(s) {
-		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') ||
-			(b >= '0' && b <= '9') || b == '-' || b == '_' || b == '.' || b == '~' {
-			buf.WriteByte(b)
-		} else {
-			fmt.Fprintf(&buf, "%%%02X", b)
-		}
-	}
-	return buf.String()
 }
 
 // ── Error mapping ──────────────────────────────────────────────────────────────
