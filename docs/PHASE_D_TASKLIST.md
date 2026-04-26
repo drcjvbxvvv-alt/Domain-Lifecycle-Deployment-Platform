@@ -1,4 +1,4 @@
-# PHASE_D_TASKLIST.md — GFW Detection & Auto-Failover Work Order (PD.1 ✅)
+# PHASE_D_TASKLIST.md — GFW Detection & Auto-Failover Work Order (PD.1 ✅ PD.2 ✅)
 
 > **Created 2026-04-21.** This document is the authoritative work order for
 > Phase D (GFW Detection) of the platform restructuring.
@@ -231,11 +231,11 @@ They NEVER hold credentials for DNS/CDN providers or make operational changes.
 
 ---
 
-### PD.2 — Multi-Layer Detection Engine **(Opus)**
+### PD.2 — Multi-Layer Detection Engine ✅ (完成)
 
 **Owner**: **Opus** — detection logic determines all downstream decisions;
 false negatives miss blocking, false positives trigger unnecessary failovers
-**Status**: 🔲 NOT STARTED
+**Status**: ✅ COMPLETED 2026-04-26
 **Depends on**: PD.1 (probe nodes reporting raw measurement data)
 **Reads first**: `docs/analysis/OONI_PROBE_ANALYSIS.md` §5 "Blocking Detection
 Logic", §6 "GFW-Specific Detection Patterns"

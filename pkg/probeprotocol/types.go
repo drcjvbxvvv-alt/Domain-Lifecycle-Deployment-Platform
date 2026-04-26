@@ -87,6 +87,10 @@ type DNSResult struct {
 	Error      string   `json:"error,omitempty"`
 	DurationMS int64    `json:"duration_ms"`
 	Truncated  bool     `json:"truncated,omitempty"` // UDP truncated, retried via TCP
+
+	// GFW heuristic flags — computed by the checker on the probe node.
+	IsBogon    bool `json:"is_bogon,omitempty"`    // at least one answer is a known GFW bogon IP
+	IsInjected bool `json:"is_injected,omitempty"` // response arrived in < 5 ms (likely DNS injection)
 }
 
 // TCPResult is the result of a TCP connect to one IP:port.

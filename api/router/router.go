@@ -375,7 +375,7 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			}
 		}
 
-		// ── GFW Probe Node Admin (PD.1) ───────────────────────────────────────
+		// ── GFW Probe Node Admin (PD.1 + PD.2) ──────────────────────────────
 		gfw := authed.Group("/gfw")
 		{
 			// Probe nodes (read-only via admin console)
@@ -391,6 +391,19 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 				gfwAssignments.GET("/:domainId", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeNodeHandler.GetAssignment)
 				gfwAssignments.PUT("/:domainId", middleware.RequireAnyRole("admin"), deps.ProbeNodeHandler.UpsertAssignment)
 				gfwAssignments.DELETE("/:domainId", middleware.RequireAnyRole("admin"), deps.ProbeNodeHandler.DeleteAssignment)
+			}
+			// Measurements — raw 4-layer results (PD.2)
+			gfwMeasurements := gfw.Group("/measurements")
+			{
+				gfwMeasurements.GET("/:domainId", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeNodeHandler.ListMeasurements)
+				gfwMeasurements.GET("/:domainId/latest", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeNodeHandler.GetLatestMeasurements)
+			}
+			// Bogon IP management (PD.2)
+			gfwBogons := gfw.Group("/bogons")
+			{
+				gfwBogons.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.ProbeNodeHandler.ListBogonIPs)
+				gfwBogons.POST("", middleware.RequireAnyRole("admin"), deps.ProbeNodeHandler.AddBogonIP)
+				gfwBogons.DELETE("/:ip", middleware.RequireAnyRole("admin"), deps.ProbeNodeHandler.DeleteBogonIP)
 			}
 		}
 	}

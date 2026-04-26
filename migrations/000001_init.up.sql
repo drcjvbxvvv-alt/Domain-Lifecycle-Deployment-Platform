@@ -896,6 +896,67 @@ CREATE TABLE gfw_check_assignments (
 
 CREATE INDEX idx_gfw_check_assignments_enabled ON gfw_check_assignments(enabled);
 
+-- Raw 4-layer measurements reported by probe + control nodes.           [PD.2]
+-- TimescaleDB hypertable partitioned by measured_at; 180-day retention.
+-- JSONB columns store per-layer result structs (probeprotocol wire format).
+CREATE TABLE gfw_measurements (
+    id              BIGSERIAL,
+    domain_id       BIGINT NOT NULL,                    -- FK to domains(id), not enforced for TimescaleDB perf
+    node_id         VARCHAR(64) NOT NULL,               -- FK to gfw_probe_nodes.node_id
+    node_role       VARCHAR(16) NOT NULL,               -- "probe" | "control"
+    region          VARCHAR(64) NOT NULL DEFAULT '',
+    fqdn            VARCHAR(512) NOT NULL,
+    dns_result      JSONB,                              -- DNSResult (including IsBogon, IsInjected flags)
+    tcp_results     JSONB,                              -- []TCPResult
+    tls_results     JSONB,                              -- []TLSResult
+    http_result     JSONB,                              -- HTTPResult
+    total_ms        INT,
+    measured_at     TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (measured_at, id)
+);
+
+CREATE INDEX idx_gfw_measurements_domain ON gfw_measurements(domain_id, measured_at DESC);
+CREATE INDEX idx_gfw_measurements_node   ON gfw_measurements(node_id,   measured_at DESC);
+
+-- TimescaleDB hypertable + 180-day retention (non-TS environments: skip silently).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
+    PERFORM create_hypertable('gfw_measurements', 'measured_at',
+                              if_not_exists => TRUE);
+    PERFORM add_retention_policy('gfw_measurements', INTERVAL '180 days',
+                                 if_not_exists => TRUE);
+  END IF;
+END
+$$;
+
+-- Known GFW bogon IPs — maintained by the platform, checked by probe nodes.   [PD.2]
+-- source: "seeded" (built-in at install) | "operator" (added via admin API)
+CREATE TABLE gfw_bogon_ips (
+    id          BIGSERIAL PRIMARY KEY,
+    ip_address  VARCHAR(45) NOT NULL,
+    source      VARCHAR(32) NOT NULL DEFAULT 'seeded',  -- "seeded" | "operator"
+    note        TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_gfw_bogon_ips_ip UNIQUE (ip_address)
+);
+
+-- Seed with well-documented GFW injection/bogon IPs (as of 2025).
+-- Sources: OONI data, Censorship Canary, citizenlab/filtering-data.
+INSERT INTO gfw_bogon_ips (ip_address, source, note) VALUES
+    ('1.2.3.4',          'seeded', 'Classic GFW bogon — used in DNS injection since ~2010'),
+    ('37.235.1.174',     'seeded', 'GFW DNS injection — FreeDNS range hijacked'),
+    ('8.7.198.45',       'seeded', 'GFW DNS injection — bogon returned for blocked domains'),
+    ('46.82.174.68',     'seeded', 'GFW DNS injection — confirmed by OONI measurements'),
+    ('78.16.49.15',      'seeded', 'GFW DNS injection — repeated in OONI CN data'),
+    ('93.46.8.89',       'seeded', 'GFW DNS injection — CN ISP bogon range'),
+    ('93.46.8.90',       'seeded', 'GFW DNS injection — CN ISP bogon range'),
+    ('243.185.187.39',   'seeded', 'GFW DNS injection — non-routable bogon'),
+    ('243.185.187.30',   'seeded', 'GFW DNS injection — non-routable bogon'),
+    ('0.0.0.0',          'seeded', 'Null route — used by some CN ISPs for blocking'),
+    ('127.0.0.1',        'seeded', 'Localhost — used by some CN ISPs for NXDOMAIN substitute')
+ON CONFLICT (ip_address) DO NOTHING;
+
 -- ============================================================
 -- MAINTENANCE WINDOWS                                        [PC.4]
 -- ============================================================

@@ -176,8 +176,10 @@ func main() {
 	uptimeHandler := handler.NewUptimeHandler(analyticsService, logger)
 
 	gfwNodeStore := postgres.NewGFWNodeStore(db)
+	gfwMeasurementStore := postgres.NewGFWMeasurementStore(db)
 	gfwNodeSvc := gfwsvc.NewNodeService(gfwNodeStore, domainStore, logger)
-	probeNodeHandler := handler.NewProbeNodeHandler(gfwNodeSvc, gfwNodeStore, logger)
+	gfwMeasurementSvc := gfwsvc.NewMeasurementService(gfwMeasurementStore, gfwNodeStore, logger)
+	probeNodeHandler := handler.NewProbeNodeHandler(gfwNodeSvc, gfwMeasurementSvc, gfwNodeStore, logger)
 
 	// ── Management API listener (:8080, JWT auth) ──────────────────────────
 	mgmtRouter := buildManagementRouter(logger, router.Deps{
