@@ -61,14 +61,15 @@ func (h *HandleAlertFire) ProcessTask(ctx context.Context, t *asynq.Task) error 
 // ── HandleNotifySend ─────────────────────────────────────────────────────────
 
 // HandleNotifySend processes TypeNotifySend tasks.
-// It reads the channel + config from the payload, builds the appropriate
-// notify.Notifier, and delivers the message.
+// It loads the channel from DB via the Dispatcher and sends the message.
 type HandleNotifySend struct {
-	logger *zap.Logger
+	dispatcher *Dispatcher
+	alertStore *postgres.AlertStore
+	logger     *zap.Logger
 }
 
-func NewHandleNotifySend(logger *zap.Logger) *HandleNotifySend {
-	return &HandleNotifySend{logger: logger}
+func NewHandleNotifySend(dispatcher *Dispatcher, alertStore *postgres.AlertStore, logger *zap.Logger) *HandleNotifySend {
+	return &HandleNotifySend{dispatcher: dispatcher, alertStore: alertStore, logger: logger}
 }
 
 func (h *HandleNotifySend) ProcessTask(ctx context.Context, t *asynq.Task) error {
@@ -77,67 +78,28 @@ func (h *HandleNotifySend) ProcessTask(ctx context.Context, t *asynq.Task) error
 		return fmt.Errorf("notify send: unmarshal payload: %w", err)
 	}
 
-	notifier, err := buildNotifier(p.Channel, p.Config)
-	if err != nil {
-		return fmt.Errorf("notify send: build notifier for channel %q: %w", p.Channel, err)
+	// Build the message from the alert event if available.
+	var msg notify.Message
+	if p.AlertEventID != 0 {
+		ev, err := h.alertStore.GetByID(ctx, p.AlertEventID)
+		if err != nil {
+			h.logger.Warn("notify send: get alert event",
+				zap.Int64("alert_event_id", p.AlertEventID),
+				zap.Error(err),
+			)
+			// Proceed with a minimal message rather than failing the task.
+			msg = notify.Message{Subject: "Alert notification", Severity: p.Severity}
+		} else {
+			msg = buildMessage(ev)
+		}
+	} else {
+		msg = notify.Message{Subject: "Alert notification", Severity: p.Severity}
 	}
 
-	msg := notify.Message{
-		Subject:  p.Subject,
-		Body:     p.Body,
-		Severity: p.Severity,
+	var evID *int64
+	if p.AlertEventID != 0 {
+		evID = &p.AlertEventID
 	}
-
-	if err := notifier.Send(ctx, msg); err != nil {
-		h.logger.Error("notify send failed",
-			zap.String("channel", p.Channel),
-			zap.String("subject", p.Subject),
-			zap.Error(err),
-		)
-		return fmt.Errorf("notify send: %w", err)
-	}
-
-	h.logger.Info("notification sent",
-		zap.String("channel", p.Channel),
-		zap.String("subject", p.Subject),
-	)
+	h.dispatcher.DispatchByChannelID(ctx, p.ChannelID, evID, msg)
 	return nil
-}
-
-// ── channel config types ──────────────────────────────────────────────────────
-
-type telegramConfig struct {
-	BotToken string `json:"bot_token"`
-	ChatID   string `json:"chat_id"`
-}
-
-type webhookConfig struct {
-	URL string `json:"url"`
-}
-
-func buildNotifier(channel string, config []byte) (notify.Notifier, error) {
-	switch channel {
-	case "telegram":
-		var cfg telegramConfig
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return nil, fmt.Errorf("parse telegram config: %w", err)
-		}
-		if cfg.BotToken == "" || cfg.ChatID == "" {
-			return nil, fmt.Errorf("telegram config missing bot_token or chat_id")
-		}
-		return notify.NewTelegram(cfg.BotToken, cfg.ChatID), nil
-
-	case "webhook":
-		var cfg webhookConfig
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return nil, fmt.Errorf("parse webhook config: %w", err)
-		}
-		if cfg.URL == "" {
-			return nil, fmt.Errorf("webhook config missing url")
-		}
-		return notify.NewWebhook(cfg.URL), nil
-
-	default:
-		return nil, fmt.Errorf("unsupported channel %q", channel)
-	}
 }

@@ -9,6 +9,39 @@ import (
 	"time"
 )
 
+// TelegramConfig is the JSON structure stored in notification_channels.config.
+type TelegramConfig struct {
+	BotToken string `json:"bot_token"`
+	ChatID   string `json:"chat_id"`
+}
+
+// TelegramSender implements the PC.6 Sender interface for Telegram.
+type TelegramSender struct {
+	client *http.Client
+}
+
+func NewTelegramSender() *TelegramSender {
+	return &TelegramSender{client: &http.Client{Timeout: 10 * time.Second}}
+}
+
+func (s *TelegramSender) Send(ctx context.Context, config json.RawMessage, msg Message) error {
+	var cfg TelegramConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return fmt.Errorf("telegram: parse config: %w", err)
+	}
+	n := NewTelegram(cfg.BotToken, cfg.ChatID)
+	n.client = s.client
+	return n.Send(ctx, msg)
+}
+
+func (s *TelegramSender) Test(ctx context.Context, config json.RawMessage) error {
+	return s.Send(ctx, config, Message{
+		Subject:  "Test notification",
+		Body:     "This is a test message from Domain Platform.",
+		Severity: "info",
+	})
+}
+
 // Telegram sends notifications via the Telegram Bot API.
 type Telegram struct {
 	botToken string

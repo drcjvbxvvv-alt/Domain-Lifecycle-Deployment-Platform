@@ -127,7 +127,7 @@ onMounted(async () => {
 <template>
   <div>
     <PageHeader :title="store.current?.name ?? '載入中…'" @back="router.back()">
-      <template #extra>
+      <template #actions>
         <NSpace>
           <NButton @click="openEdit">編輯</NButton>
           <NButton type="primary" @click="openCreateAccount">新增帳號</NButton>

@@ -35,17 +35,16 @@ type AlertEvent struct {
 }
 
 // NotificationRule maps to the notification_rules table.
+// Rules link a notification_channel to alert filter conditions.
 type NotificationRule struct {
-	ID             int64           `db:"id"`
-	UUID           string          `db:"uuid"`
-	Name           string          `db:"name"`
-	ProjectID      *int64          `db:"project_id"`
-	SeverityFilter *string         `db:"severity_filter"` // nil = match all severities
-	TargetKind     *string         `db:"target_kind"`     // nil = match all target kinds
-	Channel        string          `db:"channel"`         // telegram | webhook | slack
-	Config         json.RawMessage `db:"config"`
-	Enabled        bool            `db:"enabled"`
-	CreatedAt      time.Time       `db:"created_at"`
+	ID          int64     `db:"id"`
+	ChannelID   int64     `db:"channel_id"`
+	AlertType   *string   `db:"alert_type"`   // nil = all alert types
+	MinSeverity string    `db:"min_severity"` // P1 | P2 | P3 | INFO
+	TargetType  *string   `db:"target_type"`  // nil = global; "project" | "domain"
+	TargetID    *int64    `db:"target_id"`    // nil = global
+	Enabled     bool      `db:"enabled"`
+	CreatedAt   time.Time `db:"created_at"`
 }
 
 // ── Alert Store ───────────────────────────────────────────────────────────────
@@ -216,31 +215,57 @@ func (s *AlertStore) CountUnresolved(ctx context.Context) (map[string]int, error
 
 // ── NotificationRule ──────────────────────────────────────────────────────────
 
-// ListMatchingRules returns enabled notification_rules that match the given
-// severity and target_kind. Rules with nil filter fields match everything.
-func (s *AlertStore) ListMatchingRules(ctx context.Context, severity, targetKind string) ([]NotificationRule, error) {
+// severityRank maps severity strings to numeric weights for "at least" comparison.
+// Higher = more severe. P1 > P2 > P3 > INFO.
+var severityRank = map[string]int{"P1": 4, "P2": 3, "P3": 2, "INFO": 1}
+
+// ListMatchingRules returns enabled notification_rules whose filter conditions
+// match the given alert. Rules with nil filter fields are treated as "match all".
+// Only rules whose min_severity ≤ the event severity are returned.
+func (s *AlertStore) ListMatchingRules(ctx context.Context, severity, alertType string, targetType *string, targetID *int64) ([]NotificationRule, error) {
 	var out []NotificationRule
 	err := s.db.SelectContext(ctx, &out,
-		`SELECT id, uuid, name, project_id, severity_filter, target_kind, channel, config, enabled, created_at
+		`SELECT id, channel_id, alert_type, min_severity, target_type, target_id, enabled, created_at
 		 FROM notification_rules
 		 WHERE enabled = true
-		   AND (severity_filter IS NULL OR severity_filter = $1)
-		   AND (target_kind IS NULL OR target_kind = $2)`,
-		severity, targetKind)
+		   AND (alert_type IS NULL OR alert_type = $1)
+		   AND (target_type IS NULL OR (target_type = $2 AND (target_id IS NULL OR target_id = $3)))`,
+		alertType, targetType, targetID)
 	if err != nil {
 		return nil, fmt.Errorf("list matching notification rules: %w", err)
+	}
+
+	// Apply severity filter in Go to avoid complex SQL ranking logic.
+	evRank := severityRank[severity]
+	filtered := out[:0]
+	for _, r := range out {
+		if minRank, ok := severityRank[r.MinSeverity]; ok && evRank >= minRank {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered, nil
+}
+
+// ListAllRules returns all notification rules ordered by channel.
+func (s *AlertStore) ListAllRules(ctx context.Context) ([]NotificationRule, error) {
+	var out []NotificationRule
+	err := s.db.SelectContext(ctx, &out,
+		`SELECT id, channel_id, alert_type, min_severity, target_type, target_id, enabled, created_at
+		 FROM notification_rules ORDER BY channel_id, id`)
+	if err != nil {
+		return nil, fmt.Errorf("list notification rules: %w", err)
 	}
 	return out, nil
 }
 
-// ListAllRules returns all notification rules (for admin management).
-func (s *AlertStore) ListAllRules(ctx context.Context) ([]NotificationRule, error) {
+// ListRulesByChannel returns all rules for a given channel.
+func (s *AlertStore) ListRulesByChannel(ctx context.Context, channelID int64) ([]NotificationRule, error) {
 	var out []NotificationRule
 	err := s.db.SelectContext(ctx, &out,
-		`SELECT id, uuid, name, project_id, severity_filter, target_kind, channel, config, enabled, created_at
-		 FROM notification_rules ORDER BY name`)
+		`SELECT id, channel_id, alert_type, min_severity, target_type, target_id, enabled, created_at
+		 FROM notification_rules WHERE channel_id = $1 ORDER BY id`, channelID)
 	if err != nil {
-		return nil, fmt.Errorf("list notification rules: %w", err)
+		return nil, fmt.Errorf("list notification rules for channel %d: %w", channelID, err)
 	}
 	return out, nil
 }
@@ -249,23 +274,21 @@ func (s *AlertStore) ListAllRules(ctx context.Context) ([]NotificationRule, erro
 func (s *AlertStore) CreateRule(ctx context.Context, r *NotificationRule) error {
 	return s.db.QueryRowContext(ctx,
 		`INSERT INTO notification_rules
-		   (name, project_id, severity_filter, target_kind, channel, config, enabled)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7)
-		 RETURNING id, uuid, created_at`,
-		r.Name, r.ProjectID, r.SeverityFilter, r.TargetKind,
-		r.Channel, nullJSON(r.Config), r.Enabled,
-	).Scan(&r.ID, &r.UUID, &r.CreatedAt)
+		   (channel_id, alert_type, min_severity, target_type, target_id, enabled)
+		 VALUES ($1,$2,$3,$4,$5,$6)
+		 RETURNING id, created_at`,
+		r.ChannelID, r.AlertType, r.MinSeverity, r.TargetType, r.TargetID, r.Enabled,
+	).Scan(&r.ID, &r.CreatedAt)
 }
 
 // UpdateRule updates mutable fields of a notification rule.
 func (s *AlertStore) UpdateRule(ctx context.Context, r *NotificationRule) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE notification_rules SET
-		   name=$1, severity_filter=$2, target_kind=$3,
-		   channel=$4, config=$5, enabled=$6
+		   channel_id=$1, alert_type=$2, min_severity=$3,
+		   target_type=$4, target_id=$5, enabled=$6
 		 WHERE id=$7`,
-		r.Name, r.SeverityFilter, r.TargetKind,
-		r.Channel, nullJSON(r.Config), r.Enabled, r.ID)
+		r.ChannelID, r.AlertType, r.MinSeverity, r.TargetType, r.TargetID, r.Enabled, r.ID)
 	if err != nil {
 		return fmt.Errorf("update notification rule %d: %w", r.ID, err)
 	}
@@ -291,7 +314,7 @@ func (s *AlertStore) DeleteRule(ctx context.Context, id int64) error {
 func (s *AlertStore) GetRule(ctx context.Context, id int64) (*NotificationRule, error) {
 	var r NotificationRule
 	err := s.db.GetContext(ctx, &r,
-		`SELECT id, uuid, name, project_id, severity_filter, target_kind, channel, config, enabled, created_at
+		`SELECT id, channel_id, alert_type, min_severity, target_type, target_id, enabled, created_at
 		 FROM notification_rules WHERE id=$1`, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

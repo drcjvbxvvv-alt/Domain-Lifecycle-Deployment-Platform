@@ -1,4 +1,4 @@
-# PHASE_C_TASKLIST.md — Monitoring & Alerting Work Order (PC.1 ✅ PC.2 ✅)
+# PHASE_C_TASKLIST.md — Monitoring & Alerting Work Order (PC.1 ✅ PC.2 ✅ PC.6 ✅)
 
 > **Created 2026-04-21.** This document is the authoritative work order for
 > Phase C (Monitoring & Alerting) of the platform restructuring.
@@ -738,10 +738,10 @@ patterns. TimescaleDB continuous aggregates provide efficient queries.
 
 ---
 
-### PC.6 — Notification Hub
+### PC.6 — Notification Hub ✅ (完成)
 
 **Owner**: Sonnet
-**Status**: 🔲 NOT STARTED
+**Status**: ✅ COMPLETED 2026-04-25
 **Depends on**: Phase A (basic `pkg/notify` exists with Telegram + Webhook)
 **Reads first**: `docs/analysis/UPTIME_KUMA_ANALYSIS.md` §3 "Notification
 Architecture"

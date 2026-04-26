@@ -155,8 +155,11 @@ func main() {
 	probeHandler := handler.NewProbeHandler(probeStore)
 
 	alertStore := postgres.NewAlertStore(db)
+	notifStore := postgres.NewNotificationStore(db)
 	alertEngine := alertsvc.NewEngine(alertStore, asynqClient, logger)
+	dispatcher := alertsvc.NewDispatcher(notifStore, alertStore, logger)
 	alertHandler := handler.NewAlertHandler(alertStore, alertEngine, logger)
+	notifHandler := handler.NewNotificationHandler(notifStore, alertStore, dispatcher, logger)
 
 	gfwNodeStore := postgres.NewGFWNodeStore(db)
 	gfwNodeSvc := gfwsvc.NewNodeService(gfwNodeStore, domainStore, logger)
@@ -186,6 +189,7 @@ func main() {
 		DNSTemplateHandler:      dnsTemplateHandler,
 		ProbeHandler:            probeHandler,
 		AlertHandler:            alertHandler,
+		NotificationHandler:     notifHandler,
 		ProbeNodeHandler:        probeNodeHandler,
 		JWTManager:              jwtMgr,
 	})

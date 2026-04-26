@@ -97,7 +97,7 @@ onMounted(() => store.fetchList())
 <template>
   <div>
     <PageHeader title="Registrar 管理">
-      <template #extra>
+      <template #actions>
         <NButton type="primary" @click="openCreate">新增 Registrar</NButton>
       </template>
     </PageHeader>

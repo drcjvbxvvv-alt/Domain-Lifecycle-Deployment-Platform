@@ -573,20 +573,48 @@ CREATE INDEX idx_alert_events_dedup       ON alert_events (dedup_key, created_at
 CREATE INDEX idx_alert_events_unresolved  ON alert_events (severity, created_at DESC) WHERE resolved_at IS NULL;
 CREATE INDEX idx_alert_events_target      ON alert_events (target_kind, target_id, created_at DESC);
 
-CREATE TABLE notification_rules (
+-- notification_channels: reusable named channels with embedded config/credentials
+CREATE TABLE notification_channels (
     id              BIGSERIAL PRIMARY KEY,
     uuid            UUID NOT NULL DEFAULT gen_random_uuid(),
-    name            VARCHAR(100) NOT NULL,
-    project_id      BIGINT REFERENCES projects(id),
-    severity_filter VARCHAR(8),
-    target_kind     VARCHAR(32),
-    channel         VARCHAR(20) NOT NULL,
-    config          JSONB NOT NULL,
+    name            VARCHAR(128) NOT NULL,
+    channel_type    VARCHAR(32)  NOT NULL,  -- "telegram" | "slack" | "webhook" | "email"
+    config          JSONB        NOT NULL,  -- type-specific credentials/config
+    is_default      BOOLEAN      NOT NULL DEFAULT false,
+    enabled         BOOLEAN      NOT NULL DEFAULT true,
+    created_by      BIGINT REFERENCES users(id),
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_notification_channels_type CHECK (channel_type IN ('telegram', 'slack', 'webhook', 'email'))
+);
+CREATE INDEX idx_notification_channels_enabled ON notification_channels (enabled, channel_type);
+
+-- notification_rules: many-to-many — which channels receive which alert types
+CREATE TABLE notification_rules (
+    id              BIGSERIAL PRIMARY KEY,
+    channel_id      BIGINT NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
+    alert_type      VARCHAR(64),   -- NULL = all alert types
+    min_severity    VARCHAR(8)  NOT NULL DEFAULT 'P3',  -- P1 | P2 | P3 | INFO
+    target_type     VARCHAR(32),   -- NULL = global; "project" | "domain"
+    target_id       BIGINT,        -- specific project/domain ID, NULL = global
     enabled         BOOLEAN NOT NULL DEFAULT true,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_notification_rules_channel CHECK (channel IN ('telegram', 'webhook', 'slack'))
+    CONSTRAINT chk_notification_rules_severity CHECK (min_severity IN ('P1', 'P2', 'P3', 'INFO'))
 );
-CREATE INDEX idx_notification_rules_enabled ON notification_rules (enabled, severity_filter) WHERE enabled = true;
+CREATE INDEX idx_notification_rules_enabled ON notification_rules (enabled, channel_id) WHERE enabled = true;
+
+-- notification_history: audit trail of every dispatch attempt
+CREATE TABLE notification_history (
+    id              BIGSERIAL PRIMARY KEY,
+    channel_id      BIGINT NOT NULL REFERENCES notification_channels(id),
+    alert_event_id  BIGINT REFERENCES alert_events(id),
+    status          VARCHAR(32) NOT NULL,  -- "sent" | "failed" | "suppressed"
+    message         TEXT,
+    error           TEXT,
+    sent_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_notification_history_channel ON notification_history (channel_id, sent_at DESC);
+CREATE INDEX idx_notification_history_alert   ON notification_history (alert_event_id) WHERE alert_event_id IS NOT NULL;
 
 -- ============================================================
 -- AGENT VERSIONS & UPGRADES                                  [P3]

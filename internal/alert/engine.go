@@ -62,8 +62,9 @@ func (e *Engine) Fire(ctx context.Context, ev *postgres.AlertEvent) error {
 		zap.String("title", ev.Title),
 	)
 
-	// ── 3. Match notification rules ──────────────────────────────────────────
-	rules, err := e.store.ListMatchingRules(ctx, ev.Severity, ev.TargetKind)
+	// ── 3. Match notification rules and fan out ───────────────────────────────
+	targetKind := ev.TargetKind
+	rules, err := e.store.ListMatchingRules(ctx, ev.Severity, ev.Source, &targetKind, ev.TargetID)
 	if err != nil {
 		// Non-fatal: alert is already persisted. Log and continue.
 		e.logger.Error("alert fire: list matching rules",
@@ -77,15 +78,20 @@ func (e *Engine) Fire(ctx context.Context, ev *postgres.AlertEvent) error {
 		return nil
 	}
 
-	// ── 4. Fan out TypeNotifySend per rule ────────────────────────────────────
-	subject, body := formatMessage(ev)
+	// ── 4. Fan out TypeNotifySend per matched channel (deduplicated) ──────────
+	seen := make(map[int64]struct{}, len(rules))
 	enqueued := 0
 	for _, rule := range rules {
-		if err := e.enqueueNotify(ctx, rule, subject, body, ev.Severity); err != nil {
+		if _, dup := seen[rule.ChannelID]; dup {
+			continue
+		}
+		seen[rule.ChannelID] = struct{}{}
+
+		if err := e.enqueueNotify(ctx, rule.ChannelID, ev.ID, ev.Severity); err != nil {
 			e.logger.Warn("alert fire: enqueue notify",
 				zap.Int64("alert_id", ev.ID),
 				zap.Int64("rule_id", rule.ID),
-				zap.String("channel", rule.Channel),
+				zap.Int64("channel_id", rule.ChannelID),
 				zap.Error(err),
 			)
 			continue
@@ -133,13 +139,11 @@ func EnqueueFire(ctx context.Context, client *asynq.Client, p tasks.AlertFirePay
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func (e *Engine) enqueueNotify(ctx context.Context, rule postgres.NotificationRule, subject, body, severity string) error {
+func (e *Engine) enqueueNotify(ctx context.Context, channelID, alertEventID int64, severity string) error {
 	payload := tasks.NotifySendPayload{
-		Channel:  rule.Channel,
-		Config:   rule.Config, // raw JSONB from DB — self-contained credentials
-		Subject:  subject,
-		Body:     body,
-		Severity: severityToLevel(severity),
+		ChannelID:    channelID,
+		AlertEventID: alertEventID,
+		Severity:     severityToLevel(severity),
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

@@ -32,6 +32,7 @@ type Deps struct {
 	DNSTemplateHandler       *handler.DNSTemplateHandler
 	ProbeHandler             *handler.ProbeHandler
 	AlertHandler             *handler.AlertHandler
+	NotificationHandler      *handler.NotificationHandler
 	ProbeNodeHandler         *handler.ProbeNodeHandler
 	JWTManager               *auth.JWTManager
 }
@@ -296,6 +297,24 @@ func RegisterV1(r *gin.Engine, deps Deps) {
 			notifRules.GET("/:id", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.AlertHandler.GetRule)
 			notifRules.PUT("/:id", middleware.RequireAnyRole("admin"), deps.AlertHandler.UpdateRule)
 			notifRules.DELETE("/:id", middleware.RequireAnyRole("admin"), deps.AlertHandler.DeleteRule)
+		}
+
+		// ── Notification Channels (PC.6) ─────────────────────────────────────
+		notifChannels := authed.Group("/notifications/channels")
+		{
+			notifChannels.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.NotificationHandler.ListChannels)
+			notifChannels.POST("", middleware.RequireAnyRole("admin"), deps.NotificationHandler.CreateChannel)
+			notifChannels.GET("/:id", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.NotificationHandler.GetChannel)
+			notifChannels.PUT("/:id", middleware.RequireAnyRole("admin"), deps.NotificationHandler.UpdateChannel)
+			notifChannels.DELETE("/:id", middleware.RequireAnyRole("admin"), deps.NotificationHandler.DeleteChannel)
+			notifChannels.POST("/:id/test", middleware.RequireAnyRole("admin"), deps.NotificationHandler.TestChannel)
+			notifChannels.GET("/:id/rules", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.NotificationHandler.ListChannelRules)
+		}
+
+		// ── Notification History (PC.6) ────────────────────────────────────────
+		notifHistory := authed.Group("/notifications/history")
+		{
+			notifHistory.GET("", middleware.RequireAnyRole("viewer", "operator", "release_manager", "admin", "auditor"), deps.NotificationHandler.ListHistory)
 		}
 
 		// ── GFW Probe Node Admin (PD.1) ───────────────────────────────────────

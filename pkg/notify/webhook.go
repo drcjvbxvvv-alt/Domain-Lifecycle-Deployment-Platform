@@ -9,6 +9,38 @@ import (
 	"time"
 )
 
+// WebhookConfig is the JSON structure stored in notification_channels.config.
+type WebhookConfig struct {
+	URL string `json:"url"`
+}
+
+// WebhookSender implements the PC.6 Sender interface for generic webhooks.
+type WebhookSender struct {
+	client *http.Client
+}
+
+func NewWebhookSender() *WebhookSender {
+	return &WebhookSender{client: &http.Client{Timeout: 10 * time.Second}}
+}
+
+func (s *WebhookSender) Send(ctx context.Context, config json.RawMessage, msg Message) error {
+	var cfg WebhookConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return fmt.Errorf("webhook: parse config: %w", err)
+	}
+	n := NewWebhook(cfg.URL)
+	n.client = s.client
+	return n.Send(ctx, msg)
+}
+
+func (s *WebhookSender) Test(ctx context.Context, config json.RawMessage) error {
+	return s.Send(ctx, config, Message{
+		Subject:  "Test notification",
+		Body:     "This is a test message from Domain Platform.",
+		Severity: "info",
+	})
+}
+
 // Webhook sends notifications to a generic HTTP endpoint via JSON POST.
 type Webhook struct {
 	url    string

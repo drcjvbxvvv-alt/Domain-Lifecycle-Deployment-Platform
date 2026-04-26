@@ -97,11 +97,13 @@ func main() {
 	asynqClient := bootstrap.NewAsynqClient(cfg.Redis)
 	defer asynqClient.Close()
 
-	// ── Alert engine (PC.2) ───────────────────────────────────────────────
+	// ── Alert engine (PC.2) + Notification dispatcher (PC.6) ─────────────
 	alertStore := postgres.NewAlertStore(db)
+	notifStore := postgres.NewNotificationStore(db)
 	alertEngine := alertsvc.NewEngine(alertStore, asynqClient, logger)
+	dispatcher := alertsvc.NewDispatcher(notifStore, alertStore, logger)
 	alertFireHandler := alertsvc.NewHandleAlertFire(alertEngine, logger)
-	notifySendHandler := alertsvc.NewHandleNotifySend(logger)
+	notifySendHandler := alertsvc.NewHandleNotifySend(dispatcher, alertStore, logger)
 
 	// ── Probe engine (PC.1) ───────────────────────────────────────────────
 	probeStore := postgres.NewProbeStore(db)

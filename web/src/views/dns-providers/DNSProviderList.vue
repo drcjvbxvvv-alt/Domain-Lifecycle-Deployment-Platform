@@ -96,7 +96,7 @@ onMounted(async () => {
 <template>
   <div>
     <PageHeader title="DNS Provider 管理">
-      <template #extra>
+      <template #actions>
         <NButton type="primary" @click="openCreate">新增 Provider</NButton>
       </template>
     </PageHeader>

@@ -196,6 +196,26 @@ const router = createRouter({
           component: () => import('@/views/settings/DNSTemplateList.vue'),
           meta: { title: 'DNS 記錄範本', minRole: 'viewer' },
         },
+
+        // ── Notifications (PC.6) ───────────────────────────────
+        {
+          path: 'settings/notification-channels',
+          name: 'NotificationChannelList',
+          component: () => import('@/views/settings/NotificationChannelList.vue'),
+          meta: { title: '通知頻道', minRole: 'viewer' },
+        },
+        {
+          path: 'settings/notification-rules',
+          name: 'NotificationRuleList',
+          component: () => import('@/views/settings/NotificationRuleList.vue'),
+          meta: { title: '通知規則', minRole: 'viewer' },
+        },
+        {
+          path: 'settings/notification-history',
+          name: 'NotificationHistory',
+          component: () => import('@/views/settings/NotificationHistory.vue'),
+          meta: { title: '通知歷史', minRole: 'viewer' },
+        },
       ],
     },
 

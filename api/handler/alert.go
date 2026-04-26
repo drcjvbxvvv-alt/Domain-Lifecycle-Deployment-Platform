@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -194,27 +193,28 @@ func (h *AlertHandler) GetRule(c *gin.Context) {
 // CreateRule POST /notification-rules
 func (h *AlertHandler) CreateRule(c *gin.Context) {
 	var req struct {
-		Name           string          `json:"name" binding:"required"`
-		ProjectID      *int64          `json:"project_id"`
-		SeverityFilter *string         `json:"severity_filter"`
-		TargetKind     *string         `json:"target_kind"`
-		Channel        string          `json:"channel" binding:"required"`
-		Config         json.RawMessage `json:"config" binding:"required"`
-		Enabled        bool            `json:"enabled"`
+		ChannelID   int64   `json:"channel_id" binding:"required"`
+		AlertType   *string `json:"alert_type"`
+		MinSeverity string  `json:"min_severity"`
+		TargetType  *string `json:"target_type"`
+		TargetID    *int64  `json:"target_id"`
+		Enabled     bool    `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 40000, "data": nil, "message": err.Error()})
 		return
 	}
+	if req.MinSeverity == "" {
+		req.MinSeverity = "P3"
+	}
 
 	r := &postgres.NotificationRule{
-		Name:           req.Name,
-		ProjectID:      req.ProjectID,
-		SeverityFilter: req.SeverityFilter,
-		TargetKind:     req.TargetKind,
-		Channel:        req.Channel,
-		Config:         req.Config,
-		Enabled:        req.Enabled,
+		ChannelID:   req.ChannelID,
+		AlertType:   req.AlertType,
+		MinSeverity: req.MinSeverity,
+		TargetType:  req.TargetType,
+		TargetID:    req.TargetID,
+		Enabled:     req.Enabled,
 	}
 	if err := h.store.CreateRule(c.Request.Context(), r); err != nil {
 		h.logger.Error("create notification rule", zap.Error(err))
@@ -244,32 +244,32 @@ func (h *AlertHandler) UpdateRule(c *gin.Context) {
 	}
 
 	var req struct {
-		Name           *string         `json:"name"`
-		SeverityFilter *string         `json:"severity_filter"`
-		TargetKind     *string         `json:"target_kind"`
-		Channel        *string         `json:"channel"`
-		Config         json.RawMessage `json:"config"`
-		Enabled        *bool           `json:"enabled"`
+		ChannelID   *int64  `json:"channel_id"`
+		AlertType   *string `json:"alert_type"`
+		MinSeverity *string `json:"min_severity"`
+		TargetType  *string `json:"target_type"`
+		TargetID    *int64  `json:"target_id"`
+		Enabled     *bool   `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 40000, "data": nil, "message": err.Error()})
 		return
 	}
 
-	if req.Name != nil {
-		existing.Name = *req.Name
+	if req.ChannelID != nil {
+		existing.ChannelID = *req.ChannelID
 	}
-	if req.SeverityFilter != nil {
-		existing.SeverityFilter = req.SeverityFilter
+	if req.AlertType != nil {
+		existing.AlertType = req.AlertType
 	}
-	if req.TargetKind != nil {
-		existing.TargetKind = req.TargetKind
+	if req.MinSeverity != nil {
+		existing.MinSeverity = *req.MinSeverity
 	}
-	if req.Channel != nil {
-		existing.Channel = *req.Channel
+	if req.TargetType != nil {
+		existing.TargetType = req.TargetType
 	}
-	if len(req.Config) > 0 {
-		existing.Config = req.Config
+	if req.TargetID != nil {
+		existing.TargetID = req.TargetID
 	}
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled
@@ -325,15 +325,13 @@ func alertEventResponse(ev *postgres.AlertEvent) gin.H {
 
 func notificationRuleResponse(r *postgres.NotificationRule) gin.H {
 	return gin.H{
-		"id":              r.ID,
-		"uuid":            r.UUID,
-		"name":            r.Name,
-		"project_id":      r.ProjectID,
-		"severity_filter": r.SeverityFilter,
-		"target_kind":     r.TargetKind,
-		"channel":         r.Channel,
-		"config":          r.Config,
-		"enabled":         r.Enabled,
-		"created_at":      r.CreatedAt,
+		"id":           r.ID,
+		"channel_id":   r.ChannelID,
+		"alert_type":   r.AlertType,
+		"min_severity": r.MinSeverity,
+		"target_type":  r.TargetType,
+		"target_id":    r.TargetID,
+		"enabled":      r.Enabled,
+		"created_at":   r.CreatedAt,
 	}
 }

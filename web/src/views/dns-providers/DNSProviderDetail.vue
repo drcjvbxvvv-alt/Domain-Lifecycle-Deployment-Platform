@@ -63,7 +63,7 @@ onMounted(async () => {
 <template>
   <div>
     <PageHeader :title="store.current?.name ?? '載入中…'" @back="router.back()">
-      <template #extra>
+      <template #actions>
         <NButton @click="openEdit">編輯</NButton>
       </template>
     </PageHeader>

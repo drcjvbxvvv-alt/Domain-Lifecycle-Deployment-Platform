@@ -136,12 +136,10 @@ type AlertFirePayload struct {
 // ── Notify ────────────────────────────────────────────────────────────────────
 
 // NotifySendPayload is the payload for TypeNotifySend.
-// Config carries channel-specific credentials (e.g. bot_token + chat_id for Telegram)
-// so the handler is self-contained without a DB round-trip.
+// Carries the channel_id so the worker can look up the channel config
+// from the notification_channels table and dispatch via the Dispatcher.
 type NotifySendPayload struct {
-	Channel  string `json:"channel"`            // "telegram" | "slack" | "webhook"
-	Config   []byte `json:"config"`             // channel-specific JSON config
-	Subject  string `json:"subject"`
-	Body     string `json:"body"`
-	Severity string `json:"severity,omitempty"` // "info" | "warn" | "error"
+	ChannelID    int64  `json:"channel_id"`
+	AlertEventID int64  `json:"alert_event_id,omitempty"`
+	Severity     string `json:"severity,omitempty"` // "info" | "warning" | "critical"
 }

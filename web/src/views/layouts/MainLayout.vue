@@ -57,10 +57,13 @@ const navGroups: NavGroup[] = [
   {
     groupLabel: '設定',
     items: [
-      { label: '使用者管理',   key: '/settings/users',          icon: 'users'    },
-      { label: '費率表管理',   key: '/settings/fee-schedules',  icon: 'currency' },
-      { label: '標籤管理',     key: '/settings/tags',            icon: 'tag'      },
-      { label: 'DNS 記錄範本', key: '/settings/dns-templates',   icon: 'dns'      },
+      { label: '使用者管理',   key: '/settings/users',                    icon: 'users'    },
+      { label: '費率表管理',   key: '/settings/fee-schedules',            icon: 'currency' },
+      { label: '標籤管理',     key: '/settings/tags',                      icon: 'tag'      },
+      { label: 'DNS 記錄範本', key: '/settings/dns-templates',             icon: 'dns'      },
+      { label: '通知頻道',     key: '/settings/notification-channels',     icon: 'bell'     },
+      { label: '通知規則',     key: '/settings/notification-rules',        icon: 'bell'     },
+      { label: '通知歷史',     key: '/settings/notification-history',      icon: 'bell'     },
     ],
   },
 ]
